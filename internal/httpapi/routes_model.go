@@ -23,6 +23,7 @@ type Model interface {
 	Node(ctx context.Context, environment, id string) (model.Node, error)
 	Edges(ctx context.Context, f model.EdgeFilter) (model.EdgePage, error)
 	Graph(ctx context.Context, environment string) (model.Graph, error)
+	History(ctx context.Context, environment, id string, limit int, cursor string) (model.HistoryPage, error)
 }
 
 type typesOutput struct {
@@ -80,6 +81,18 @@ type graphInput struct {
 
 type graphOutput struct {
 	Body model.Graph
+}
+
+type historyInput struct {
+	Entity      string `query:"entity" required:"true" enum:"node" doc:"The entity whose history is read; only node in this version."`
+	Environment string `query:"environment" required:"true" doc:"The node's environment."`
+	ID          string `query:"id" required:"true" doc:"The node's id."`
+	Limit       int    `query:"limit" default:"50" minimum:"1" maximum:"500" doc:"Page size."`
+	Cursor      string `query:"cursor" doc:"Opaque cursor from a previous page's next_cursor."`
+}
+
+type historyOutput struct {
+	Body model.HistoryPage
 }
 
 func registerModelRoutes(api huma.API, d Deps) {
@@ -192,21 +205,83 @@ func registerModelRoutes(api huma.API, d Deps) {
 		}
 		return &graphOutput{Body: out}, nil
 	})
+
+	register(api, huma.Operation{
+		OperationID: "get-history",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/history",
+		Summary:     "A node's change_log rows and its edges' rows, newest first",
+		Tags:        tags,
+		Errors:      []int{http.StatusUnprocessableEntity},
+	}, Viewer, func(ctx context.Context, in *historyInput) (*historyOutput, error) {
+		out, err := d.Model.History(ctx, in.Environment, in.ID, in.Limit, in.Cursor)
+		if err != nil {
+			return nil, fail(ctx, "get-history", err)
+		}
+		return &historyOutput{Body: out}, nil
+	})
 }
 
-// modelFailure maps a model error to a problem: 404, 422, or a 500 with fixed text. A 500 is
-// logged with the operation and the error class only: never query arguments or row data.
+// modelFailure maps a model read error to a problem; a 404 names a node.
 func modelFailure(logger *slog.Logger) func(ctx context.Context, op string, err error) error {
-	return func(ctx context.Context, op string, err error) error {
-		var v *model.ValidationError
+	fail := entityFailure(logger)
+	return func(ctx context.Context, op string, err error) error { return fail(ctx, op, "node", err) }
+}
+
+// conflictDetail is the 409 detail per entity.
+var conflictDetail = map[string]string{
+	"node":        "a node with this environment and id already exists",
+	"edge":        "an edge of this type between these nodes already exists",
+	"team":        "a team with this id already exists",
+	"environment": "an environment with this id or sort already exists",
+}
+
+// entityFailure maps a model error to a problem: 404 (naming entity), 403, 409, 412, 422, or a
+// 500 with fixed text. A 500 is logged with the operation and the error class only: never query
+// arguments, attribute values or row data.
+func entityFailure(logger *slog.Logger) func(ctx context.Context, op, entity string, err error) error {
+	return func(ctx context.Context, op, entity string, err error) error {
+		var (
+			v      *model.ValidationError
+			vs     model.ValidationErrors
+			forbid *model.ForbiddenError
+			inUse  *model.InUseError
+			secret *model.SecretError
+		)
 		switch {
 		case errors.Is(err, model.ErrNotFound):
-			return huma.Error404NotFound("node not found")
+			return huma.Error404NotFound(entity + " not found")
+		case errors.Is(err, model.ErrConflict):
+			return problemOf(http.StatusConflict, ProblemConflict, conflictDetail[entity])
+		case errors.Is(err, model.ErrStale):
+			return problemOf(http.StatusPreconditionFailed, ProblemStale, "If-Match is not the current version")
+		case errors.As(err, &forbid):
+			return problemOf(http.StatusForbidden, ProblemForbidden, forbid.Error())
+		case errors.As(err, &inUse):
+			return &InUseProblem{
+				ErrorModel: huma.ErrorModel{
+					Type: ProblemInUse, Title: http.StatusText(http.StatusConflict), Status: http.StatusConflict,
+					Detail: entity + " is still used by nodes",
+				},
+				Count: inUse.Count,
+			}
+		case errors.As(err, &secret):
+			details := make([]error, 0, len(secret.Locations))
+			for _, loc := range secret.Locations {
+				details = append(details, &huma.ErrorDetail{Location: loc, Message: "looks like a secret"})
+			}
+			return problemOf(http.StatusUnprocessableEntity, ProblemSecretDetected, "attributes look like secrets", details...)
+		case errors.As(err, &vs):
+			details := make([]error, 0, len(vs))
+			for _, e := range vs {
+				details = append(details, &huma.ErrorDetail{Location: e.Location, Message: e.Message})
+			}
+			return huma.Error422UnprocessableEntity("validation failed", details...)
 		case errors.As(err, &v):
 			return huma.Error422UnprocessableEntity("validation failed", &huma.ErrorDetail{Location: v.Location, Message: v.Message})
 		}
 		if logger != nil {
-			logger.ErrorContext(ctx, "model read failed", "operation", op, "error_class", errorClass(err))
+			logger.ErrorContext(ctx, "model operation failed", "operation", op, "error_class", errorClass(err))
 		}
 		return huma.Error500InternalServerError("internal error")
 	}

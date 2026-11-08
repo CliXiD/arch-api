@@ -45,6 +45,12 @@ const (
 	ProblemValidation      = "/problems/validation"
 	ProblemAuthUnavailable = "/problems/auth-unavailable"
 	ProblemTooLarge        = "/problems/too-large"
+
+	ProblemConflict             = "/problems/conflict"
+	ProblemInUse                = "/problems/in-use"
+	ProblemStale                = "/problems/stale"
+	ProblemPreconditionRequired = "/problems/precondition-required"
+	ProblemSecretDetected       = "/problems/secret-detected"
 )
 
 // Authenticator validates the `Authorization` header value.
@@ -151,6 +157,21 @@ func newProblem(status int, msg string, errs ...error) huma.StatusError {
 		p.Type = ProblemValidation
 	}
 	return p
+}
+
+// problemOf is newProblem with the given problem type, for the statuses newProblem leaves untyped
+// or types differently (403, 409, 412, 428, the 422 of a secret).
+func problemOf(status int, problemType, detail string, errs ...error) huma.StatusError {
+	p := newProblem(status, detail, errs...).(*huma.ErrorModel)
+	p.Type = problemType
+	return p
+}
+
+// InUseProblem is the 409 `/problems/in-use` problem: Huma's error model plus the number of nodes
+// that still use the team or environment.
+type InUseProblem struct {
+	huma.ErrorModel
+	Count int `json:"count" doc:"Number of nodes owned by the team, or held by the environment."`
 }
 
 // writeProblem writes an RFC 9457 problem. detail is fixed text: never a token, claim or header.

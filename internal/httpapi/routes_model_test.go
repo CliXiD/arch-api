@@ -33,6 +33,13 @@ type fakeModel struct {
 	nodeFilter model.NodeFilter
 	edgeFilter model.EdgeFilter
 	graphEnv   string
+	history    historyCall
+}
+
+type historyCall struct {
+	environment, id string
+	limit           int
+	cursor          string
 }
 
 func (f *fakeModel) Types(context.Context) (model.Types, error) {
@@ -88,6 +95,19 @@ func (f *fakeModel) Graph(_ context.Context, environment string) (model.Graph, e
 		Edges: []model.GraphEdge{{UID: "0b0f8c4e-5a0f-4a37-9d35-9b2f1f6f0c11", Type: "calls", From: "payments-api", To: "core-banking",
 			Attributes: map[string]any{"protocol": "https", "port": float64(443)}}},
 	}, nil
+}
+
+func (f *fakeModel) History(_ context.Context, environment, id string, limit int, cursor string) (model.HistoryPage, error) {
+	f.history = historyCall{environment: environment, id: id, limit: limit, cursor: cursor}
+	if f.err != nil {
+		return model.HistoryPage{}, f.err
+	}
+	next := "next-page"
+	return model.HistoryPage{Items: []model.Change{{
+		ID: 42, At: created, Actor: "8d0c6d4e-user", ActorName: "editor", ActorKind: "user", Source: "ui",
+		Entity: "node", EntityKey: "prod/payments-api", Action: "create",
+		After: map[string]any{"environment": "prod", "id": "payments-api"},
+	}}, NextCursor: &next}, nil
 }
 
 func modelServer(t *testing.T, m *fakeModel) (*testServer, http.Header) {

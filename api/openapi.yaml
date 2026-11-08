@@ -101,6 +101,243 @@ paths:
       summary: A page of edges
       tags:
       - model
+    post:
+      operationId: create-edge
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+          description: Created
+          headers:
+            ETag:
+              schema:
+                description: The edge's version, quoted.
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create an edge (editor of the source node's team, or admin)
+      tags:
+      - model
+  /api/v1/edges/{uid}:
+    delete:
+      operationId: delete-edge
+      parameters:
+      - in: path
+        name: uid
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+        in: header
+        name: If-Match
+        schema:
+          description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "412":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Failed
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "428":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Required
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete an edge
+      tags:
+      - model
+    patch:
+      operationId: update-edge
+      parameters:
+      - in: path
+        name: uid
+        required: true
+        schema:
+          format: uuid
+          type: string
+      - description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+        in: header
+        name: If-Match
+        schema:
+          description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgePatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edge"
+          description: OK
+          headers:
+            ETag:
+              schema:
+                description: The edge's version, quoted.
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "412":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Failed
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "428":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Required
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Replace an edge's attributes
+      tags:
+      - model
   /api/v1/environments:
     get:
       operationId: list-environments
@@ -144,6 +381,207 @@ paths:
       security:
       - bearer: []
       summary: Environments
+      tags:
+      - model
+    post:
+      operationId: create-environment
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create an environment
+      tags:
+      - model
+  /api/v1/environments/{id}:
+    delete:
+      operationId: delete-environment
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: still used by nodes (`/problems/in-use`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete an environment that holds no node
+      tags:
+      - model
+    patch:
+      operationId: update-environment
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnvironmentPatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Environment"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Rename or re-sort an environment
       tags:
       - model
   /api/v1/graph:
@@ -204,6 +642,102 @@ paths:
       security:
       - bearer: []
       summary: One environment's compact graph (gzip when accepted)
+      tags:
+      - model
+  /api/v1/history:
+    get:
+      operationId: get-history
+      parameters:
+      - description: The entity whose history is read; only node in this version.
+        explode: false
+        in: query
+        name: entity
+        required: true
+        schema:
+          description: The entity whose history is read; only node in this version.
+          enum:
+          - node
+          type: string
+      - description: The node's environment.
+        explode: false
+        in: query
+        name: environment
+        required: true
+        schema:
+          description: The node's environment.
+          type: string
+      - description: The node's id.
+        explode: false
+        in: query
+        name: id
+        required: true
+        schema:
+          description: The node's id.
+          type: string
+      - description: Page size.
+        explode: false
+        in: query
+        name: limit
+        schema:
+          default: 50
+          description: Page size.
+          format: int64
+          maximum: 500
+          minimum: 1
+          type: integer
+      - description: Opaque cursor from a previous page's next_cursor.
+        explode: false
+        in: query
+        name: cursor
+        schema:
+          description: Opaque cursor from a previous page's next_cursor.
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HistoryPage"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: A node's change_log rows and its edges' rows, newest first
       tags:
       - model
   /api/v1/me:
@@ -363,7 +897,155 @@ paths:
       summary: A page of nodes
       tags:
       - model
+    post:
+      operationId: create-node
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+          description: Created
+          headers:
+            ETag:
+              schema:
+                description: The node's version, quoted.
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create a node (editor of the owning team, or admin)
+      tags:
+      - model
   /api/v1/nodes/{environment}/{id}:
+    delete:
+      operationId: delete-node
+      parameters:
+      - in: path
+        name: environment
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+        in: header
+        name: If-Match
+        schema:
+          description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "412":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Failed
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "428":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Required
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete a node and every edge from or to it
+      tags:
+      - model
     get:
       operationId: get-node
       parameters:
@@ -436,6 +1118,102 @@ paths:
       summary: One node
       tags:
       - model
+    patch:
+      operationId: update-node
+      parameters:
+      - in: path
+        name: environment
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      - description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+        in: header
+        name: If-Match
+        schema:
+          description: "The current version, quoted, as in the ETag. Required: 428 without it, 412 when it is not the current version."
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodePatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+          description: OK
+          headers:
+            ETag:
+              schema:
+                description: The node's version, quoted.
+                type: string
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "412":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Failed
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "428":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Precondition Required
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: "Update a node: each field present replaces the stored value"
+      tags:
+      - model
   /api/v1/teams:
     get:
       operationId: list-teams
@@ -479,6 +1257,201 @@ paths:
       security:
       - bearer: []
       summary: Teams
+      tags:
+      - model
+    post:
+      operationId: create-team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create a team
+      tags:
+      - model
+  /api/v1/teams/{id}:
+    delete:
+      operationId: delete-team
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: still used by nodes (`/problems/in-use`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete a team that owns no node
+      tags:
+      - model
+    patch:
+      operationId: update-team
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamPatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Team"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Rename a team
       tags:
       - model
   /api/v1/types:
@@ -566,6 +1539,75 @@ paths:
       - health
 components:
   schemas:
+    Change:
+      additionalProperties: false
+      properties:
+        action:
+          enum:
+          - create
+          - update
+          - delete
+          type: string
+        actor:
+          description: Subject of the token; for a service account, its client id.
+          type: string
+        actor_kind:
+          enum:
+          - user
+          - service
+          type: string
+        actor_name:
+          description: Username; for a service account, its client id.
+          type: string
+        after:
+          additionalProperties: {}
+          description: The entity after the change; null on delete.
+          type:
+          - object
+          - "null"
+        at:
+          format: date-time
+          type: string
+        before:
+          additionalProperties: {}
+          description: The entity before the change; null on create.
+          type:
+          - object
+          - "null"
+        entity:
+          enum:
+          - node
+          - edge
+          - type
+          - team
+          - environment
+          type: string
+        entity_key:
+          description: Node <environment>/<id>, edge uid, team or environment id.
+          type: string
+        id:
+          format: int64
+          type: integer
+        source:
+          enum:
+          - ui
+          - yaml
+          - discovery
+          - import
+          type: string
+      required:
+      - id
+      - at
+      - actor
+      - actor_name
+      - actor_kind
+      - source
+      - entity
+      - entity_key
+      - action
+      - before
+      - after
+      type: object
     Edge:
       additionalProperties: false
       properties:
@@ -613,6 +1655,30 @@ components:
       - updated_at
       - version
       type: object
+    EdgeCreate:
+      additionalProperties: false
+      properties:
+        attributes:
+          additionalProperties: {}
+          description: Checked against the type's attributes_schema and for secrets.
+          type: object
+        environment:
+          type: string
+        from:
+          description: Source node id, in the environment.
+          type: string
+        to:
+          description: Target node id, in the environment.
+          type: string
+        type:
+          description: Edge type id.
+          type: string
+      required:
+      - environment
+      - type
+      - from
+      - to
+      type: object
     EdgePage:
       additionalProperties: false
       properties:
@@ -628,6 +1694,16 @@ components:
       required:
       - items
       - next_cursor
+      type: object
+    EdgePatch:
+      additionalProperties: false
+      properties:
+        attributes:
+          additionalProperties: {}
+          description: Replaces every attribute.
+          type: object
+      required:
+      - attributes
       type: object
     EdgeType:
       additionalProperties: false
@@ -669,6 +1745,24 @@ components:
       - name
       - sort
       type: object
+    EnvironmentCreate:
+      additionalProperties: false
+      properties:
+        id:
+          pattern: ^[a-z0-9][a-z0-9-]{1,62}$
+          type: string
+        name:
+          minLength: 1
+          type: string
+        sort:
+          description: Display order; unique.
+          format: int32
+          type: integer
+      required:
+      - id
+      - name
+      - sort
+      type: object
     EnvironmentList:
       additionalProperties: false
       properties:
@@ -678,6 +1772,17 @@ components:
           type: array
       required:
       - items
+      type: object
+    EnvironmentPatch:
+      additionalProperties: false
+      properties:
+        name:
+          minLength: 1
+          type: string
+        sort:
+          description: Display order; unique.
+          format: int32
+          type: integer
       type: object
     ErrorDetail:
       additionalProperties: false
@@ -801,6 +1906,68 @@ components:
       - name
       - owner
       - tags
+      type: object
+    HistoryPage:
+      additionalProperties: false
+      properties:
+        items:
+          items:
+            $ref: "#/components/schemas/Change"
+          type: array
+        next_cursor:
+          description: Cursor of the next page; null on the last page.
+          type:
+          - string
+          - "null"
+      required:
+      - items
+      - next_cursor
+      type: object
+    InUseProblem:
+      additionalProperties: false
+      properties:
+        count:
+          description: Number of nodes owned by the team, or held by the environment.
+          format: int64
+          type: integer
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          examples:
+          - Property foo is required but is missing.
+          type: string
+        errors:
+          description: Optional list of individual error details
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+          type:
+          - array
+          - "null"
+        instance:
+          description: A URI reference that identifies the specific occurrence of the problem.
+          examples:
+          - https://example.com/error-log/abc123
+          format: uri
+          type: string
+        status:
+          description: HTTP status code
+          examples:
+          - 400
+          format: int64
+          type: integer
+        title:
+          description: A short, human-readable summary of the problem type. This value should not change between occurrences of the error.
+          examples:
+          - Bad Request
+          type: string
+        type:
+          default: about:blank
+          description: A URI reference to human-readable documentation for the error.
+          examples:
+          - https://example.com/errors/example
+          format: uri
+          type: string
+      required:
+      - count
       type: object
     KindPair:
       additionalProperties: false
@@ -927,6 +2094,41 @@ components:
       - updated_at
       - version
       type: object
+    NodeCreate:
+      additionalProperties: false
+      properties:
+        attributes:
+          additionalProperties: {}
+          description: Checked against the type's attributes_schema and for secrets.
+          type: object
+        description:
+          type: string
+        environment:
+          type: string
+        id:
+          description: Unique in the environment.
+          pattern: ^[a-z0-9][a-z0-9-]{1,62}$
+          type: string
+        name:
+          minLength: 1
+          type: string
+        owner:
+          description: Owning team id.
+          type: string
+        tags:
+          items:
+            type: string
+          type: array
+        type:
+          description: Node type id.
+          type: string
+      required:
+      - environment
+      - id
+      - type
+      - name
+      - owner
+      type: object
     NodePage:
       additionalProperties: false
       properties:
@@ -942,6 +2144,26 @@ components:
       required:
       - items
       - next_cursor
+      type: object
+    NodePatch:
+      additionalProperties: false
+      properties:
+        attributes:
+          additionalProperties: {}
+          description: Replaces every attribute.
+          type: object
+        description:
+          type: string
+        name:
+          minLength: 1
+          type: string
+        owner:
+          description: Owning team id; needs rights on the old and the new team.
+          type: string
+        tags:
+          items:
+            type: string
+          type: array
       type: object
     NodeType:
       additionalProperties: false
@@ -1019,6 +2241,19 @@ components:
       - name
       - created_at
       type: object
+    TeamCreate:
+      additionalProperties: false
+      properties:
+        id:
+          pattern: ^[a-z0-9][a-z0-9-]{1,62}$
+          type: string
+        name:
+          minLength: 1
+          type: string
+      required:
+      - id
+      - name
+      type: object
     TeamList:
       additionalProperties: false
       properties:
@@ -1028,6 +2263,15 @@ components:
           type: array
       required:
       - items
+      type: object
+    TeamPatch:
+      additionalProperties: false
+      properties:
+        name:
+          minLength: 1
+          type: string
+      required:
+      - name
       type: object
     Types:
       additionalProperties: false

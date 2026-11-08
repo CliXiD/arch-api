@@ -20,6 +20,7 @@ type Deps struct {
 	Auth        Authenticator
 	Ready       Readiness
 	Model       Model
+	Writer      Writer
 	Logger      *slog.Logger
 	Metrics     *observability.Metrics
 	CORSOrigins []string
@@ -41,10 +42,11 @@ func NewEngine(d Deps) *gin.Engine {
 	r.Use(d.Metrics.Middleware(), observability.RequestLogger(d.Logger))
 	if len(d.CORSOrigins) > 0 {
 		r.Use(cors.New(cors.Config{
-			AllowOrigins: d.CORSOrigins,
-			AllowMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-			AllowHeaders: []string{"Authorization", "Content-Type", "traceparent"},
-			MaxAge:       12 * time.Hour,
+			AllowOrigins:  d.CORSOrigins,
+			AllowMethods:  []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+			AllowHeaders:  []string{"Authorization", "Content-Type", "If-Match", "traceparent"},
+			ExposeHeaders: []string{"ETag"},
+			MaxAge:        12 * time.Hour,
 		}))
 	}
 	r.Use(bodyLimit())
