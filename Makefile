@@ -1,4 +1,4 @@
-.PHONY: openapi openapi-check
+.PHONY: openapi openapi-check sqlc
 
 # Regenerate the API contract from the Huma types. Commit the result.
 openapi:
@@ -12,3 +12,8 @@ openapi-check:
 	rm -f "$$tmp"; \
 	if [ $$status -ne 0 ]; then echo "api/openapi.yaml is stale: run make openapi" >&2; fi; \
 	exit $$status
+
+# Regenerate the database code in internal/db/dbq from migrations/ and internal/db/queries/.
+# Commit the result; never edit it by hand.
+sqlc:
+	go tool sqlc generate
