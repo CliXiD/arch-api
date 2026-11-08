@@ -47,6 +47,13 @@ FROM edges
 WHERE uid = $1
 FOR UPDATE;
 
+-- name: ShareEdgeSourceOwner :one
+SELECT n.owner
+FROM edges e
+JOIN nodes n ON n.environment = e.environment AND n.id = e.from_id
+WHERE e.uid = $1
+FOR SHARE OF n;
+
 -- name: LockNodeEdges :many
 SELECT uid, environment, type, from_id, to_id, attributes, source, created_at, updated_at, version
 FROM edges

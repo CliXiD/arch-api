@@ -423,6 +423,56 @@ func TestWriteIntegration(t *testing.T) {
 		assert.Equal(t, before, changeCount(t, owner))
 	})
 
+	t.Run("an edge write waits for its source node's owner change", func(t *testing.T) {
+		tests := []struct {
+			name, node, method, body string
+		}{
+			{"patch", "race-patch", http.MethodPatch, `{"attributes":{"protocol":"https","port":8443}}`},
+			{"delete", "race-delete", http.MethodDelete, ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				createNode(t, editor, "prod", tt.node, "service", "platform")
+				var e model.Edge
+				rec := editor.expect(t, http.StatusCreated, http.MethodPost, "/api/v1/edges", "",
+					`{"environment":"prod","type":"calls","from":"`+tt.node+`","to":"ledger","attributes":{"protocol":"https","port":443}}`, &e)
+				etag := rec.Header().Get("ETag")
+				before := lastChangeID(t, owner)
+
+				tx, err := owner.Begin(ctx)
+				require.NoError(t, err)
+				defer func() { _ = tx.Rollback(ctx) }()
+				_, err = tx.Exec(ctx, "UPDATE nodes SET owner = 'core' WHERE environment = 'prod' AND id = $1", tt.node)
+				require.NoError(t, err)
+
+				done := make(chan *httptest.ResponseRecorder, 1)
+				go func() { done <- editor.send(t, tt.method, "/api/v1/edges/"+e.UID, etag, tt.body) }()
+				require.Eventually(t, func() bool {
+					var waiting int
+					err := owner.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+						WHERE usename = 'arch_app' AND wait_event_type = 'Lock'`).Scan(&waiting)
+					return err == nil && waiting > 0
+				}, 5*time.Second, 20*time.Millisecond, "the edge write waits on the node lock")
+				require.NoError(t, tx.Commit(ctx))
+
+				var got *httptest.ResponseRecorder
+				select {
+				case got = <-done:
+				case <-time.After(5 * time.Second):
+					t.Fatal("the edge write did not finish after the commit")
+				}
+				require.Equal(t, http.StatusForbidden, got.Code, got.Body.String())
+				var p problemBody
+				require.NoError(t, json.Unmarshal(got.Body.Bytes(), &p))
+				assert.Equal(t, "/problems/forbidden", p.Type)
+				assert.Contains(t, p.Detail, "core")
+				for _, c := range changesSince(t, owner, before) {
+					assert.NotEqual(t, e.UID, c.EntityKey, "no change_log row for the edge")
+				}
+			})
+		}
+	})
+
 	t.Run("deleting a node deletes its edges", func(t *testing.T) {
 		before := lastChangeID(t, owner)
 		var n model.Node
