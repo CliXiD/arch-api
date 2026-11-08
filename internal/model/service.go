@@ -1,6 +1,7 @@
-// Package model reads the typed graph: vocabulary, teams, environments, nodes, edges and the
-// compact per-environment graph. It owns paging (keyset cursors, limit+1 fetches) and the checks
-// that a filtered environment exists.
+// Package model reads and writes the typed graph: vocabulary, teams, environments, nodes, edges and
+// the compact per-environment graph. It owns paging (keyset cursors, limit+1 fetches), the checks
+// that a filtered environment exists, and for writes the permissions, optimistic locking,
+// attribute and secret checks and the change_log row written in the same transaction.
 package model
 
 import (
@@ -16,7 +17,7 @@ import (
 	"github.com/CliXiD/arch-api/internal/db/dbq"
 )
 
-// Service reads the model from PostgreSQL.
+// Service reads and writes the model in PostgreSQL.
 type Service struct {
 	pool *pgxpool.Pool
 	q    *dbq.Queries

@@ -146,3 +146,99 @@ type EdgeFilter struct {
 	Limit       int
 	Cursor      string
 }
+
+// Actor is who writes: recorded in every change_log row. Admin may write anything; anyone else
+// writes only nodes owned by one of Teams.
+type Actor struct {
+	// Subject is the token's sub; for a service account, its client id.
+	Subject string
+	// Username is preferred_username; for a service account, its client id.
+	Username string
+	// Kind is `user` or `service`.
+	Kind  string
+	Admin bool
+	Teams []string
+}
+
+// NodeCreate is the body of POST /nodes.
+type NodeCreate struct {
+	Environment string         `json:"environment"`
+	ID          string         `json:"id" pattern:"^[a-z0-9][a-z0-9-]{1,62}$" doc:"Unique in the environment."`
+	Type        string         `json:"type" doc:"Node type id."`
+	Name        string         `json:"name" minLength:"1"`
+	Description string         `json:"description,omitempty"`
+	Owner       string         `json:"owner" doc:"Owning team id."`
+	Tags        []string       `json:"tags,omitempty" nullable:"false"`
+	Attributes  map[string]any `json:"attributes,omitempty" doc:"Checked against the type's attributes_schema and for secrets."`
+}
+
+// NodePatch is the body of PATCH /nodes/{environment}/{id}. Each present field replaces the
+// stored value whole; absent fields are kept.
+type NodePatch struct {
+	Name        *string        `json:"name,omitempty" minLength:"1" nullable:"false"`
+	Description *string        `json:"description,omitempty" nullable:"false"`
+	Owner       *string        `json:"owner,omitempty" nullable:"false" doc:"Owning team id; needs rights on the old and the new team."`
+	Tags        *[]string      `json:"tags,omitempty" nullable:"false"`
+	Attributes  map[string]any `json:"attributes,omitempty" doc:"Replaces every attribute."`
+}
+
+// EdgeCreate is the body of POST /edges.
+type EdgeCreate struct {
+	Environment string         `json:"environment"`
+	Type        string         `json:"type" doc:"Edge type id."`
+	From        string         `json:"from" doc:"Source node id, in the environment."`
+	To          string         `json:"to" doc:"Target node id, in the environment."`
+	Attributes  map[string]any `json:"attributes,omitempty" doc:"Checked against the type's attributes_schema and for secrets."`
+}
+
+// EdgePatch is the body of PATCH /edges/{uid}.
+type EdgePatch struct {
+	Attributes map[string]any `json:"attributes" doc:"Replaces every attribute."`
+}
+
+// TeamCreate is the body of POST /teams.
+type TeamCreate struct {
+	ID   string `json:"id" pattern:"^[a-z0-9][a-z0-9-]{1,62}$"`
+	Name string `json:"name" minLength:"1"`
+}
+
+// TeamPatch is the body of PATCH /teams/{id}.
+type TeamPatch struct {
+	Name string `json:"name" minLength:"1"`
+}
+
+// EnvironmentCreate is the body of POST /environments.
+type EnvironmentCreate struct {
+	ID   string `json:"id" pattern:"^[a-z0-9][a-z0-9-]{1,62}$"`
+	Name string `json:"name" minLength:"1"`
+	Sort int32  `json:"sort" doc:"Display order; unique."`
+}
+
+// EnvironmentPatch is the body of PATCH /environments/{id}. Absent fields are kept.
+type EnvironmentPatch struct {
+	Name *string `json:"name,omitempty" minLength:"1" nullable:"false"`
+	Sort *int32  `json:"sort,omitempty" nullable:"false" doc:"Display order; unique."`
+}
+
+// Change is one change_log row: a created, updated or deleted entity.
+type Change struct {
+	ID        int64     `json:"id"`
+	At        time.Time `json:"at"`
+	Actor     string    `json:"actor" doc:"Subject of the token; for a service account, its client id."`
+	ActorName string    `json:"actor_name" doc:"Username; for a service account, its client id."`
+	ActorKind string    `json:"actor_kind" enum:"user,service"`
+	Source    string    `json:"source" enum:"ui,yaml,discovery,import"`
+	Entity    string    `json:"entity" enum:"node,edge,type,team,environment"`
+	EntityKey string    `json:"entity_key" doc:"Node <environment>/<id>, edge uid, team or environment id."`
+	Action    string    `json:"action" enum:"create,update,delete"`
+	// Before is the entity's API JSON before the change; null on create.
+	Before map[string]any `json:"before" nullable:"true" doc:"The entity before the change; null on create."`
+	// After is the entity's API JSON after the change; null on delete.
+	After map[string]any `json:"after" nullable:"true" doc:"The entity after the change; null on delete."`
+}
+
+// HistoryPage is one page of change_log rows, ordered by (at, id) descending.
+type HistoryPage struct {
+	Items      []Change `json:"items" nullable:"false"`
+	NextCursor *string  `json:"next_cursor" nullable:"true" doc:"Cursor of the next page; null on the last page."`
+}
