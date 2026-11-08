@@ -405,6 +405,21 @@ func (q *Queries) NodeOwnerKind(ctx context.Context, arg NodeOwnerKindParams) (N
 	return i, err
 }
 
+const shareEdgeSourceOwner = `-- name: ShareEdgeSourceOwner :one
+SELECT n.owner
+FROM edges e
+JOIN nodes n ON n.environment = e.environment AND n.id = e.from_id
+WHERE e.uid = $1
+FOR SHARE OF n
+`
+
+func (q *Queries) ShareEdgeSourceOwner(ctx context.Context, uid uuid.UUID) (string, error) {
+	row := q.db.QueryRow(ctx, shareEdgeSourceOwner, uid)
+	var owner string
+	err := row.Scan(&owner)
+	return owner, err
+}
+
 const teamExists = `-- name: TeamExists :one
 SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1)
 `

@@ -435,12 +435,20 @@ func (s *Service) DeleteEdge(ctx context.Context, a Actor, uid string, version i
 	})
 }
 
-// lockEdgeFor locks the edge, then checks the actor's rights on its source node's owner, then the
-// version: ErrNotFound, a ForbiddenError, or ErrStale.
+// lockEdgeFor share-locks the edge's source node and reads its owner, then locks the edge (node
+// before edge, the order DeleteNode uses, so the two can't deadlock), then checks the actor's
+// rights on that owner, then the version: ErrNotFound, a ForbiddenError, or ErrStale.
 func lockEdgeFor(ctx context.Context, q *dbq.Queries, a Actor, uid string, version int) (Edge, error) {
 	id, err := uuid.Parse(uid)
 	if err != nil {
 		return Edge{}, ErrNotFound
+	}
+	owner, err := q.ShareEdgeSourceOwner(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Edge{}, ErrNotFound
+	}
+	if err != nil {
+		return Edge{}, err
 	}
 	r, err := q.LockEdge(ctx, id)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -453,11 +461,7 @@ func lockEdgeFor(ctx context.Context, q *dbq.Queries, a Actor, uid string, versi
 	if err != nil {
 		return Edge{}, err
 	}
-	from, err := q.NodeOwnerKind(ctx, dbq.NodeOwnerKindParams{Environment: cur.Environment, ID: cur.From})
-	if err != nil {
-		return Edge{}, err
-	}
-	if err := a.can(from.Owner); err != nil {
+	if err := a.can(owner); err != nil {
 		return Edge{}, err
 	}
 	if version != cur.Version {

@@ -496,6 +496,9 @@ func TestSecretsAreNeverEchoed(t *testing.T) {
 		{"API_KEY name", "API_KEY", "c0ffee-d00d-f00d", "body.attributes.API_KEY"},
 		{"privateKey name", "privateKey", "MIIEvQIBADAN", "body.attributes.privateKey"},
 		{"URL with userinfo", "dsn", "postgres://u:p@h/db", "body.attributes.dsn"},
+		{"URL password with a slash", "dsn", "postgres://u:p/w@h", "body.attributes.dsn"},
+		{"URL password with an at sign", "dsn", "https://usr:p@ssw0rd-Qx7@db.example.test", "body.attributes.dsn"},
+		{"access_token name", "access_token", "Tq8vNw3Rk5Jy", "body.attributes.access_token"},
 		{"PEM block", "cert", pem, "body.attributes.cert"},
 		{"AWS access key", "key_id", "AKIAIOSFODNN7EXAMPLE", "body.attributes.key_id"},
 	}
@@ -529,6 +532,13 @@ func TestSecretsAreNeverEchoed(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestTokenWordsAreAccepted(t *testing.T) {
+	s := writeServer(t, &fakeWriter{})
+	body := `{"environment":"prod","id":"payments-api","type":"service","name":"P","owner":"platform","attributes":{"tokens_per_minute":600}}`
+	rec := s.send(t, http.MethodPost, "/api/v1/nodes", editorToken(t, s), body)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 }
 
 func TestWriteDatabaseError(t *testing.T) {

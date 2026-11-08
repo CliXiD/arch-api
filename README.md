@@ -154,10 +154,12 @@ entity's JSON `before` and `after`. A rejected write leaves no row. A trigger re
   `maximum`, `required`, `additionalProperties: false`). Undeclared attributes are allowed, but
   every value must be a string, number, boolean or array of strings. Edges also need both nodes in
   their `environment` and a (from kind, to kind) pair their type allows (`422` at `body.to`).
-- **Secrets.** Attribute names like `password`, `secret`, `token`, `api_key`, `private_key` or
-  `credential`, and string values holding a URL with a password, a PEM header or an AWS access
-  key id, give `422` (`/problems/secret-detected`) with one `errors[]` entry per attribute
-  (`body.attributes.<name>`, `message` `looks like a secret`). Values are never echoed or logged.
+- **Secrets.** Attribute names holding `password`, `passwd`, `secret`, `api_key`, `private_key` or
+  `credential` anywhere, or `token` as a whole word or the end of one (`access_token`, `apiToken`;
+  not `max_tokens`), and string values holding a URL with a password (whatever characters the
+  password holds), a PEM header or an AWS access key id, give `422` (`/problems/secret-detected`)
+  with one `errors[]` entry per attribute (`body.attributes.<name>`, `message`
+  `looks like a secret`). Values are never echoed or logged.
 
 | status | type | when |
 |---|---|---|
