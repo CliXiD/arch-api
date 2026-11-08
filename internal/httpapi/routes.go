@@ -89,6 +89,8 @@ func registerRoutes(api huma.API, d Deps) {
 		p, _ := auth.PrincipalFrom(ctx)
 		return &meOutput{Body: meFrom(p)}, nil
 	})
+
+	registerModelRoutes(api, d)
 }
 
 func meFrom(p auth.Principal) Me {

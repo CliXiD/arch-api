@@ -39,6 +39,8 @@ var PublicPaths = map[string]bool{"/healthz": true, "/readyz": true}
 const (
 	ProblemUnauthenticated = "/problems/unauthenticated"
 	ProblemForbidden       = "/problems/forbidden"
+	ProblemNotFound        = "/problems/not-found"
+	ProblemValidation      = "/problems/validation"
 )
 
 // Authenticator validates the `Authorization` header value.
@@ -49,6 +51,7 @@ type Authenticator interface {
 // NewAPI creates the Huma API on r and registers every route. It serves no OpenAPI, docs or
 // schema routes and adds no `$schema` fields or `Link` headers.
 func NewAPI(r *gin.Engine, d Deps) huma.API {
+	huma.NewError = newProblem
 	cfg := huma.DefaultConfig("Architecture E2E API", "0.1.0")
 	cfg.OpenAPIPath = ""
 	cfg.DocsPath = ""
@@ -109,6 +112,33 @@ func accessMiddleware(authn Authenticator) func(huma.Context, func(huma.Context)
 		}
 		next(huma.WithContext(ctx, auth.WithPrincipal(ctx.Context(), p)))
 	}
+}
+
+// newProblem is huma.NewError: Huma's error model, with the problem type of 404 and 422 set and
+// every received value cleared from errors[], so no input (`q`, ids, cursors) is echoed.
+func newProblem(status int, msg string, errs ...error) huma.StatusError {
+	details := make([]*huma.ErrorDetail, 0, len(errs))
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		var d *huma.ErrorDetail
+		if converted, ok := err.(huma.ErrorDetailer); ok {
+			d = converted.ErrorDetail()
+		} else {
+			d = &huma.ErrorDetail{Message: err.Error()}
+		}
+		d.Value = nil
+		details = append(details, d)
+	}
+	p := &huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: msg, Errors: details}
+	switch status {
+	case http.StatusNotFound:
+		p.Type = ProblemNotFound
+	case http.StatusUnprocessableEntity:
+		p.Type = ProblemValidation
+	}
+	return p
 }
 
 // writeProblem writes an RFC 9457 problem. detail is fixed text: never a token, claim or header.
