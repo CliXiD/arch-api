@@ -38,7 +38,7 @@ func TestLatestVersion(t *testing.T) {
 func TestEmbeddedMigrations(t *testing.T) {
 	got, err := db.LatestVersion(migrations.FS)
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), got)
+	assert.Equal(t, int64(3), got)
 }
 
 func TestNewPoolInvalidURLHidesValue(t *testing.T) {
