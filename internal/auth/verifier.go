@@ -18,6 +18,11 @@ const Leeway = 30 * time.Second
 // claim values.
 var ErrUnauthenticated = errors.New("a valid bearer token is required")
 
+// ErrUnavailable means a token could not be checked because the realm's signing keys have never
+// been loaded (the fetch failed, or is held back by FailureBackoff). It never carries token or
+// claim values.
+var ErrUnavailable = errors.New("signing keys are not available")
+
 // allowedAlgs are the asymmetric algorithms accepted; `none` and HMAC are always rejected.
 var allowedAlgs = []string{"RS256", "RS384", "RS512", "PS256", "ES256", "ES384"}
 
@@ -66,7 +71,9 @@ func NewVerifier(o Options) *Verifier {
 	}
 }
 
-// Authenticate validates the `Authorization` header value and returns the caller.
+// Authenticate validates the `Authorization` header value and returns the caller. A missing,
+// empty or non-Bearer header is ErrUnauthenticated, before any key lookup; other failures are
+// those of Verify.
 func (v *Verifier) Authenticate(ctx context.Context, authorization string) (Principal, error) {
 	scheme, token, ok := strings.Cut(authorization, " ")
 	if !ok || !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(token) == "" {
@@ -86,7 +93,8 @@ type tokenClaims struct {
 }
 
 // Verify checks the token's signature, issuer, audience and validity window, and returns its
-// claims. Every failure is ErrUnauthenticated.
+// claims. It returns ErrUnavailable when the signing keys have never been loaded, and
+// ErrUnauthenticated for every other failure.
 func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 	parser := jwt.NewParser(
 		jwt.WithValidMethods(allowedAlgs),
@@ -111,6 +119,9 @@ func (v *Verifier) Verify(ctx context.Context, raw string) (Claims, error) {
 		}
 		return k.key, nil
 	})
+	if errors.Is(err, errKeysUnavailable) {
+		return Claims{}, ErrUnavailable
+	}
 	if err != nil {
 		return Claims{}, ErrUnauthenticated
 	}

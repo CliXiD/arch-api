@@ -16,14 +16,23 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 )
 
 // RefetchInterval is the minimum time between two JWKS refetches caused by an unknown `kid`.
 const RefetchInterval = 30 * time.Second
 
+// FailureBackoff is the minimum time between a failed discovery or JWKS fetch and the next one.
+const FailureBackoff = 5 * time.Second
+
 const maxJWKSBytes = 1 << 20
 
-var errUnknownKey = errors.New("unknown signing key")
+var (
+	errUnknownKey = errors.New("unknown signing key")
+	// errKeysUnavailable means the keys have never been loaded and none could be obtained.
+	errKeysUnavailable = errors.New("signing keys are not available")
+)
 
 // publicKey is one verification key from the JWKS.
 type publicKey struct {
@@ -34,75 +43,119 @@ type publicKey struct {
 }
 
 // keySet caches the realm's signing keys in memory. Discovery and the first fetch are lazy.
+// mu guards only the in-memory state and is never held during discovery or an HTTP call; every
+// fetch runs through group, so concurrent callers share one.
 type keySet struct {
-	issuer  string
-	jwksURL string // configured, or discovered on first use
-	client  *http.Client
-	now     func() time.Time
-	logger  *slog.Logger
+	issuer string
+	client *http.Client
+	now    func() time.Time
+	logger *slog.Logger
+	group  singleflight.Group
 
 	mu          sync.Mutex
+	jwksURL     string // configured, or discovered on first use
 	keys        map[string]publicKey
 	loaded      bool
-	lastRefetch time.Time
+	lastAttempt time.Time // start of the last fetch
+	failed      bool      // the last fetch failed
+	lastRefetch time.Time // start of the last unknown-kid refetch after the keys were loaded
 }
 
-// get returns the key for kid. An unknown kid triggers one refetch, at most once per
-// RefetchInterval.
+// get returns the key for kid. A kid that is not cached triggers a fetch, shared with every
+// concurrent caller. After a failed fetch no new one starts for FailureBackoff; once the keys are
+// loaded, unknown-kid refetches start at most once per RefetchInterval. It returns
+// errKeysUnavailable while the keys have never been loaded, errUnknownKey otherwise.
 func (s *keySet) get(ctx context.Context, kid string) (publicKey, error) {
+	if k, ok := s.lookup(kid); ok {
+		return k, nil
+	}
+	_, _, _ = s.group.Do("jwks", func() (any, error) {
+		s.refresh(context.WithoutCancel(ctx))
+		return nil, nil
+	})
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
+	if k, ok := s.keys[kid]; ok {
+		return k, nil
+	}
 	if !s.loaded {
-		if err := s.fetch(ctx); err != nil {
-			return publicKey{}, err
-		}
-		s.loaded = true
-		if k, ok := s.keys[kid]; ok {
-			return k, nil
-		}
-		return publicKey{}, errUnknownKey
-	}
-	if k, ok := s.keys[kid]; ok {
-		return k, nil
-	}
-
-	now := s.now()
-	if !s.lastRefetch.IsZero() && now.Sub(s.lastRefetch) < RefetchInterval {
-		return publicKey{}, errUnknownKey
-	}
-	s.lastRefetch = now
-	if err := s.fetch(ctx); err != nil {
-		return publicKey{}, err
-	}
-	if k, ok := s.keys[kid]; ok {
-		return k, nil
+		return publicKey{}, errKeysUnavailable
 	}
 	return publicKey{}, errUnknownKey
 }
 
-func (s *keySet) fetch(ctx context.Context) error {
-	if s.jwksURL == "" {
+func (s *keySet) lookup(kid string) (publicKey, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	k, ok := s.keys[kid]
+	return k, ok
+}
+
+// refresh fetches the keys when the backoff allows it. A failed fetch leaves the loaded keys as
+// they are; a successful one replaces them.
+func (s *keySet) refresh(ctx context.Context) {
+	s.mu.Lock()
+	now := s.now()
+	if !s.mayFetch(now) {
+		s.mu.Unlock()
+		return
+	}
+	s.lastAttempt = now
+	if s.loaded {
+		s.lastRefetch = now
+	}
+	jwksURL := s.jwksURL
+	s.mu.Unlock()
+
+	keys, jwksURL, err := s.fetch(ctx, jwksURL)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.jwksURL = jwksURL
+	s.failed = err != nil
+	if err == nil {
+		s.keys = keys
+		s.loaded = true
+	}
+}
+
+// mayFetch reports whether a fetch may start at now. After a failed fetch only FailureBackoff
+// applies, so a failed refetch does not hold back key rotation for a whole RefetchInterval.
+// Callers hold mu.
+func (s *keySet) mayFetch(now time.Time) bool {
+	if s.failed {
+		return now.Sub(s.lastAttempt) >= FailureBackoff
+	}
+	if s.loaded {
+		return s.lastRefetch.IsZero() || now.Sub(s.lastRefetch) >= RefetchInterval
+	}
+	return true
+}
+
+// fetch discovers the JWKS URL when jwksURL is empty, then fetches the keys. It returns the JWKS
+// URL it used (or discovered), also on a failed JWKS fetch.
+func (s *keySet) fetch(ctx context.Context, jwksURL string) (map[string]publicKey, string, error) {
+	if jwksURL == "" {
 		var doc struct {
 			JWKSURI string `json:"jwks_uri"`
 		}
 		if err := s.getJSON(ctx, strings.TrimRight(s.issuer, "/")+"/.well-known/openid-configuration", &doc); err != nil {
 			s.logger.ErrorContext(ctx, "oidc discovery failed", "error", err.Error())
-			return err
+			return nil, "", err
 		}
 		if doc.JWKSURI == "" {
 			s.logger.ErrorContext(ctx, "oidc discovery failed", "error", "no jwks_uri")
-			return errors.New("discovery: no jwks_uri")
+			return nil, "", errors.New("discovery: no jwks_uri")
 		}
-		s.jwksURL = doc.JWKSURI
+		jwksURL = doc.JWKSURI
 	}
 
 	var set struct {
 		Keys []jsonWebKey `json:"keys"`
 	}
-	if err := s.getJSON(ctx, s.jwksURL, &set); err != nil {
+	if err := s.getJSON(ctx, jwksURL, &set); err != nil {
 		s.logger.ErrorContext(ctx, "jwks fetch failed", "error", err.Error())
-		return err
+		return nil, jwksURL, err
 	}
 	keys := make(map[string]publicKey, len(set.Keys))
 	for _, k := range set.Keys {
@@ -116,8 +169,7 @@ func (s *keySet) fetch(ctx context.Context) error {
 		}
 		keys[k.Kid] = pk
 	}
-	s.keys = keys
-	return nil
+	return keys, jwksURL, nil
 }
 
 func (s *keySet) getJSON(ctx context.Context, url string, v any) error {

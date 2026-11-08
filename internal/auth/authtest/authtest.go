@@ -37,24 +37,34 @@ func NewKey(t testing.TB, kid string) Key {
 }
 
 // Realm is an httptest server with OIDC discovery and a JWKS endpoint that counts its fetches.
+// Both endpoints can be made to fail (SetDown) or to wait until released (Block).
 type Realm struct {
 	Server  *httptest.Server
 	mu      sync.Mutex
 	keys    []Key
+	down    bool
+	gate    chan struct{}
+	arrived chan struct{}
 	fetches atomic.Int32
 }
 
 // NewRealm starts a fake realm serving keys. It is closed when the test ends.
 func NewRealm(t testing.TB, keys ...Key) *Realm {
 	t.Helper()
-	r := &Realm{keys: keys}
+	r := &Realm{keys: keys, arrived: make(chan struct{}, 64)}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /.well-known/openid-configuration", func(w http.ResponseWriter, req *http.Request) {
+		if !r.pass(w, req) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": r.Issuer(), "jwks_uri": r.JWKSURL()})
 	})
-	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /jwks", func(w http.ResponseWriter, req *http.Request) {
 		r.fetches.Add(1)
+		if !r.pass(w, req) {
+			return
+		}
 		r.mu.Lock()
 		defer r.mu.Unlock()
 		set := make([]map[string]string, 0, len(r.keys))
@@ -73,6 +83,62 @@ func NewRealm(t testing.TB, keys ...Key) *Realm {
 	t.Cleanup(r.Server.Close)
 	return r
 }
+
+// pass waits while the realm is blocked, then answers 503 and returns false when it is down.
+func (r *Realm) pass(w http.ResponseWriter, req *http.Request) bool {
+	r.mu.Lock()
+	gate := r.gate
+	r.mu.Unlock()
+	if gate != nil {
+		select {
+		case r.arrived <- struct{}{}:
+		default:
+		}
+		select {
+		case <-gate:
+		case <-req.Context().Done():
+			return false
+		}
+	}
+	r.mu.Lock()
+	down := r.down
+	r.mu.Unlock()
+	if down {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return false
+	}
+	return true
+}
+
+// SetDown makes discovery and the JWKS endpoint answer 503 (true) or serve again (false).
+func (r *Realm) SetDown(down bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.down = down
+}
+
+// Block makes discovery and JWKS requests wait until release is called. A JWKS request is counted
+// in Fetches when it starts, before it waits; Arrived receives once per waiting request.
+func (r *Realm) Block() (release func()) {
+	gate := make(chan struct{})
+	r.mu.Lock()
+	r.gate = gate
+	r.mu.Unlock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			r.mu.Lock()
+			if r.gate == gate {
+				r.gate = nil
+			}
+			r.mu.Unlock()
+			close(gate)
+		})
+	}
+}
+
+// Arrived receives once for every request that reached a blocked endpoint.
+func (r *Realm) Arrived() <-chan struct{} { return r.arrived }
 
 // Issuer is the realm's issuer URL.
 func (r *Realm) Issuer() string { return r.Server.URL }
