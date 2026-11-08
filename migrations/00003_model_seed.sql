@@ -32,7 +32,7 @@ INSERT INTO edge_types (id, name, attributes_schema, allowed, builtin) VALUES
     ('stores_data_in', 'Stores data in', '{"type":"object","properties":{}}',
         '[{"from":"application","to":"infrastructure"}]', true),
     ('routes_via', 'Routes via', '{"type":"object","properties":{}}',
-        '[{"from":"application","to":"network"},{"from":"network","to":"network"}]', true),
+        '[{"from":"application","to":"network"},{"from":"network","to":"network"},{"from":"network","to":"application"},{"from":"network","to":"external"},{"from":"infrastructure","to":"network"}]', true),
     ('owned_by', 'Owned by', '{"type":"object","properties":{}}',
         '[{"from":"application","to":"team"},{"from":"infrastructure","to":"team"},{"from":"network","to":"team"},{"from":"external","to":"team"}]', true);
 

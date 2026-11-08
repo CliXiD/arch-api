@@ -33,6 +33,7 @@ var sampleEdges = []dbq.InsertEdgeParams{
 	{Type: "routes_via", FromID: "payments-api", ToID: "vpc-prod", Attributes: []byte(`{}`)},
 	{Type: "routes_via", FromID: "vpc-prod", ToID: "landing-zone", Attributes: []byte(`{}`)},
 	{Type: "routes_via", FromID: "landing-zone", ToID: "direct-connect", Attributes: []byte(`{}`)},
+	{Type: "routes_via", FromID: "direct-connect", ToID: "core-banking", Attributes: []byte(`{}`)},
 }
 
 // SampleCounts are the node and edge counts SeedSample writes.

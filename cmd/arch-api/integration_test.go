@@ -121,7 +121,8 @@ func TestModelIntegration(t *testing.T) {
 			"calls":          {pair("application", "application"), pair("application", "external")},
 			"runs_on":        {pair("application", "infrastructure")},
 			"stores_data_in": {pair("application", "infrastructure")},
-			"routes_via":     {pair("application", "network"), pair("network", "network")},
+			"routes_via": {pair("application", "network"), pair("network", "network"), pair("network", "application"),
+				pair("network", "external"), pair("infrastructure", "network")},
 			"owned_by": {pair("application", "team"), pair("infrastructure", "team"), pair("network", "team"),
 				pair("external", "team")},
 		}, allowed)
@@ -146,7 +147,7 @@ func TestModelIntegration(t *testing.T) {
 	t.Run("seed --sample", func(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		require.Equal(t, 0, run([]string{"seed", "--sample"}, &stdout, &stderr), stderr.String())
-		assert.Equal(t, "seeded sample graph: 7 nodes, 6 edges in prod\n", stdout.String())
+		assert.Equal(t, "seeded sample graph: 7 nodes, 7 edges in prod\n", stdout.String())
 
 		rec := c.get(t, "/api/v1/graph?environment=prod", nil)
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
@@ -159,7 +160,7 @@ func TestModelIntegration(t *testing.T) {
 		for _, n := range raw.Nodes {
 			assert.NotContains(t, n, "attributes")
 		}
-		require.Len(t, raw.Edges, 6)
+		require.Len(t, raw.Edges, 7)
 		for _, e := range raw.Edges {
 			if e.Type == "calls" {
 				assert.Equal(t, map[string]any{"protocol": "https", "port": float64(443)}, e.Attributes)
@@ -225,7 +226,7 @@ func TestModelIntegration(t *testing.T) {
 	t.Run("filters", func(t *testing.T) {
 		var edges model.EdgePage
 		c.json(t, "/api/v1/edges?environment=prod&type=routes_via", &edges)
-		assert.Len(t, edges.Items, 3)
+		assert.Len(t, edges.Items, 4)
 		assert.Nil(t, edges.NextCursor)
 
 		var nodes model.NodePage
@@ -256,7 +257,7 @@ func TestModelIntegration(t *testing.T) {
 			}
 			cursor = *edges.NextCursor
 		}
-		assert.Len(t, edgePages, 6)
+		assert.Len(t, edgePages, 7)
 
 		for _, path := range []string{"/api/v1/nodes?environment=nope", "/api/v1/edges?environment=nope", "/api/v1/graph?environment=nope",
 			"/api/v1/nodes?cursor=zzz", "/api/v1/edges?cursor=zzz"} {

@@ -32,7 +32,7 @@ Then in this repo, with the `.env` variables exported (`set -a; . ./.env; set +a
 ```bash
 go run ./cmd/arch-api migrate up      # apply migrations (MIGRATE_DATABASE_URL)
 go run ./cmd/arch-api migrate status  # applied and pending versions
-go run ./cmd/arch-api seed --sample   # optional: sample graph (7 nodes, 6 edges) in prod (DATABASE_URL)
+go run ./cmd/arch-api seed --sample   # optional: sample graph (7 nodes, 7 edges) in prod (DATABASE_URL)
 go run ./cmd/arch-api serve           # API on HTTP_ADDR, metrics on METRICS_ADDR
 ```
 
