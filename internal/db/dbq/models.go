@@ -10,6 +10,20 @@ import (
 	"github.com/google/uuid"
 )
 
+type ChangeLog struct {
+	ID        int64
+	At        time.Time
+	Actor     string
+	ActorName string
+	ActorKind string
+	Source    string
+	Entity    string
+	EntityKey string
+	Action    string
+	Before    []byte
+	After     []byte
+}
+
 type Edge struct {
 	Uid         uuid.UUID
 	Environment string
