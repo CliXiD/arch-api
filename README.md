@@ -78,9 +78,23 @@ Read once from the environment at start-up. A missing or invalid variable stops 
 | GET | `/api/v1/graph?environment=` | bearer, role `viewer` | `200 {environment, nodes, edges}`, compact; gzip when accepted |
 | GET | `/metrics` | public, on `METRICS_ADDR` only | Prometheus text |
 
-Every `/api/v1` route answers `401` (`/problems/unauthenticated`) without a valid token and `403`
-(`/problems/forbidden`) when the role is too low, as RFC 9457 `application/problem+json`. Every
-operation is registered with a minimum role; a unit test fails when one is missing.
+Every `/api/v1` route answers, as RFC 9457 `application/problem+json`:
+
+- `401` (`/problems/unauthenticated`) without a valid token;
+- `403` (`/problems/forbidden`) when the role is too low;
+- `503` (`/problems/auth-unavailable`, `Retry-After: 5`) when a bearer token arrives while the API
+  has never loaded the realm's signing keys (the fetch failed, or is held back for 5 s after a
+  failure);
+- `413` (`/problems/too-large`) when the request body is over 1 MB. This limit applies to every
+  route of the API server and is checked before authentication.
+
+Every operation is registered with a minimum role; a unit test fails when one is missing.
+
+A token is a service account (`actor_kind: "service"`, subject and name = its client id) only when
+its `client_id` claim equals `azp`; every other token is a user. CI clients therefore need the
+`client_id` protocol mapper (user session note `clientId`) in Keycloak.
+
+Both servers use a 10 s read-header timeout, 30 s read and write timeouts and a 120 s idle timeout.
 
 Pages hold `limit` items (default `100`, `1` to `500`) in a stable order: nodes by
 `(environment, id)`, edges by `(environment, type, from, to)`. Pass `next_cursor` back as `cursor`

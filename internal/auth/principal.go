@@ -1,10 +1,7 @@
 // Package auth validates Keycloak access tokens and maps their claims to a Principal.
 package auth
 
-import (
-	"context"
-	"strings"
-)
+import "context"
 
 // Role is an arch realm role.
 type Role string
@@ -77,8 +74,9 @@ func EffectiveRoles(realmRoles []string) []Role {
 	return append(roles, orderedRoles[:rank+1]...)
 }
 
-// PrincipalFromClaims maps validated claims to a Principal. A token with a `client_id` claim, or a
-// `service-account-` username, is a service account identified by its client id.
+// PrincipalFromClaims maps validated claims to a Principal. A token is a service account only when
+// its `client_id` claim is set and equals `azp`; it is then identified by that client id. Every
+// other token is a user, whatever its username.
 func PrincipalFromClaims(c Claims) Principal {
 	p := Principal{
 		Roles:     EffectiveRoles(c.RealmAccess.Roles),
@@ -91,14 +89,10 @@ func PrincipalFromClaims(c Claims) Principal {
 	if p.Teams == nil {
 		p.Teams = []string{}
 	}
-	if c.ClientID != "" || strings.HasPrefix(c.PreferredUsername, "service-account-") {
-		clientID := c.ClientID
-		if clientID == "" {
-			clientID = c.AuthorizedParty
-		}
+	if c.ClientID != "" && c.ClientID == c.AuthorizedParty {
 		p.ActorKind = ActorService
-		p.Subject = clientID
-		p.Name = clientID
+		p.Subject = c.ClientID
+		p.Name = c.ClientID
 		return p
 	}
 	if p.Name == "" {

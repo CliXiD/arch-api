@@ -72,14 +72,35 @@ func TestPrincipalFromClaims(t *testing.T) {
 			},
 		},
 		{
-			name: "service-account username without client_id uses azp",
+			name: "service-account username without client_id is a user",
 			claims: auth.Claims{
 				Subject: "svc-sub", AuthorizedParty: "arch-ci-platform",
 				PreferredUsername: "service-account-arch-ci-platform",
 			},
 			want: auth.Principal{
-				Subject: "arch-ci-platform", Name: "arch-ci-platform",
-				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "service",
+				Subject: "svc-sub", Name: "service-account-arch-ci-platform",
+				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
+			},
+		},
+		{
+			name: "client_id different from azp is a user",
+			claims: auth.Claims{
+				Subject: "user-sub", Name: "Editor Local", ClientID: "arch-ci-platform", AuthorizedParty: "arch-web",
+				PreferredUsername: "editor",
+			},
+			want: auth.Principal{
+				Subject: "user-sub", Name: "Editor Local",
+				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
+			},
+		},
+		{
+			name: "empty client_id with azp is a user",
+			claims: auth.Claims{
+				Subject: "user-sub", AuthorizedParty: "arch-web", PreferredUsername: "editor",
+			},
+			want: auth.Principal{
+				Subject: "user-sub", Name: "editor",
+				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
 			},
 		},
 	}

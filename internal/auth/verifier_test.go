@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"io"
 	"log/slog"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,18 +110,154 @@ func TestVerifierDiscoversJWKSOnFirstToken(t *testing.T) {
 	assert.Equal(t, 1, realm.Fetches())
 }
 
-func TestVerifierJWKSFetchErrorIsUnauthenticated(t *testing.T) {
+func TestVerifierJWKSDownIsUnavailable(t *testing.T) {
 	key := authtest.NewKey(t, "k1")
-	realm := authtest.NewRealm(t, key)
-	v := auth.NewVerifier(auth.Options{
-		Issuer:   realm.Issuer(),
-		Audience: authtest.Audience,
-		JWKSURL:  realm.Issuer() + "/missing",
-		Now:      (&clock{now}).now,
-		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+
+	t.Run("JWKS URL not found", func(t *testing.T) {
+		realm := authtest.NewRealm(t, key)
+		v := auth.NewVerifier(auth.Options{
+			Issuer:   realm.Issuer(),
+			Audience: authtest.Audience,
+			JWKSURL:  realm.Issuer() + "/missing",
+			Now:      (&clock{now}).now,
+			Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		_, err := v.Authenticate(context.Background(), "Bearer "+authtest.Sign(t, key, realm.Claims(now, "viewer")))
+		require.ErrorIs(t, err, auth.ErrUnavailable)
+		assert.NotErrorIs(t, err, auth.ErrUnauthenticated)
 	})
-	_, err := v.Authenticate(context.Background(), "Bearer "+authtest.Sign(t, key, realm.Claims(now, "viewer")))
-	require.ErrorIs(t, err, auth.ErrUnauthenticated)
+
+	for _, discover := range []bool{false, true} {
+		t.Run(map[bool]string{false: "configured JWKS URL", true: "discovered JWKS URL"}[discover], func(t *testing.T) {
+			realm := authtest.NewRealm(t, key)
+			realm.SetDown(true)
+			c := &clock{now}
+			v := newVerifier(realm, c, discover)
+			token := "Bearer " + authtest.Sign(t, key, realm.Claims(now, "viewer"))
+
+			_, err := v.Authenticate(context.Background(), token)
+			require.ErrorIs(t, err, auth.ErrUnavailable)
+
+			realm.SetDown(false)
+			c.t = now.Add(auth.FailureBackoff)
+			p, err := v.Authenticate(context.Background(), token)
+			require.NoError(t, err)
+			assert.Equal(t, "8d0c6d4e-user", p.Subject)
+		})
+	}
+}
+
+func TestVerifierFailureBackoff(t *testing.T) {
+	k1 := authtest.NewKey(t, "k1")
+	k2 := authtest.NewKey(t, "k2")
+	tests := []struct {
+		name string
+		// loaded: the keys are loaded with k1 before the realm goes down, and the failing token
+		// uses the then unknown k2.
+		loaded  bool
+		wantErr error
+	}{
+		{"failed first load", false, auth.ErrUnavailable},
+		{"failed refetch after load", true, auth.ErrUnauthenticated},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			realm := authtest.NewRealm(t, k1)
+			c := &clock{now}
+			v := newVerifier(realm, c, false)
+			key := k1
+			if tt.loaded {
+				_, err := v.Authenticate(context.Background(), "Bearer "+authtest.Sign(t, k1, realm.Claims(now, "viewer")))
+				require.NoError(t, err)
+				key = k2
+			}
+			fetches := realm.Fetches()
+			token := "Bearer " + authtest.Sign(t, key, realm.Claims(now, "viewer"))
+
+			realm.SetDown(true)
+			_, err := v.Authenticate(context.Background(), token)
+			require.ErrorIs(t, err, tt.wantErr)
+			require.Equal(t, fetches+1, realm.Fetches(), "the failed fetch")
+
+			realm.SetDown(false)
+			realm.SetKeys(k1, k2)
+			c.t = now.Add(4 * time.Second)
+			_, err = v.Authenticate(context.Background(), token)
+			require.ErrorIs(t, err, tt.wantErr)
+			assert.Equal(t, fetches+1, realm.Fetches(), "no fetch within the backoff")
+
+			c.t = now.Add(auth.FailureBackoff)
+			_, err = v.Authenticate(context.Background(), token)
+			require.NoError(t, err)
+			assert.Equal(t, fetches+2, realm.Fetches(), "one fetch once the backoff has passed")
+		})
+	}
+}
+
+func TestVerifierKnownKidDuringRefetch(t *testing.T) {
+	k1 := authtest.NewKey(t, "k1")
+	k2 := authtest.NewKey(t, "k2")
+	realm := authtest.NewRealm(t, k1)
+	v := newVerifier(realm, &clock{now}, false)
+	known := "Bearer " + authtest.Sign(t, k1, realm.Claims(now, "viewer"))
+	_, err := v.Authenticate(context.Background(), known)
+	require.NoError(t, err)
+
+	release := realm.Block()
+	t.Cleanup(release)
+	realm.SetKeys(k1, k2)
+	done := make(chan error, 1)
+	go func() {
+		_, err := v.Authenticate(context.Background(), "Bearer "+authtest.Sign(t, k2, realm.Claims(now, "viewer")))
+		done <- err
+	}()
+	<-realm.Arrived() // the k2 refetch is in flight
+
+	_, err = v.Authenticate(context.Background(), known)
+	require.NoError(t, err, "a cached kid does not wait for the refetch")
+
+	release()
+	require.NoError(t, <-done)
+	assert.Equal(t, 2, realm.Fetches())
+}
+
+func TestVerifierConcurrentUnknownKidSharesOneFetch(t *testing.T) {
+	k1 := authtest.NewKey(t, "k1")
+	k2 := authtest.NewKey(t, "k2")
+	realm := authtest.NewRealm(t, k1)
+	v := newVerifier(realm, &clock{now}, false)
+	_, err := v.Authenticate(context.Background(), "Bearer "+authtest.Sign(t, k1, realm.Claims(now, "viewer")))
+	require.NoError(t, err)
+	before := realm.Fetches()
+
+	release := realm.Block()
+	t.Cleanup(release)
+	realm.SetKeys(k1, k2) // key rotation
+	token := "Bearer " + authtest.Sign(t, k2, realm.Claims(now, "viewer"))
+
+	const callers = 20
+	var started, finished sync.WaitGroup
+	errs := make(chan error, callers)
+	started.Add(callers)
+	finished.Add(callers)
+	for range callers {
+		go func() {
+			defer finished.Done()
+			started.Done()
+			_, err := v.Authenticate(context.Background(), token)
+			errs <- err
+		}()
+	}
+	started.Wait()
+	<-realm.Arrived() // one refetch is in flight
+	release()
+	finished.Wait()
+	close(errs)
+
+	for err := range errs {
+		require.NoError(t, err)
+	}
+	assert.Equal(t, before+1, realm.Fetches(), "exactly one JWKS fetch")
 }
 
 func TestVerifierUnknownKid(t *testing.T) {

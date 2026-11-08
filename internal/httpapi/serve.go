@@ -20,6 +20,26 @@ import (
 
 const shutdownTimeout = 10 * time.Second
 
+// Server timeouts, for the API and the metrics server alike.
+const (
+	readHeaderTimeout = 10 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 30 * time.Second
+	idleTimeout       = 120 * time.Second
+)
+
+// newServer returns an http.Server for h on addr with the server timeouts.
+func newServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
+		IdleTimeout:       idleTimeout,
+	}
+}
+
 // Serve runs the API on cfg.HTTPAddr and /metrics on cfg.MetricsAddr until ctx is done, then shuts
 // both down.
 func Serve(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
@@ -72,8 +92,8 @@ func Serve(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
 	metricsMux.Handle("GET /metrics", metrics.Handler())
 
 	servers := []*http.Server{
-		{Addr: cfg.HTTPAddr, Handler: engine, ReadHeaderTimeout: 10 * time.Second},
-		{Addr: cfg.MetricsAddr, Handler: metricsMux, ReadHeaderTimeout: 10 * time.Second},
+		newServer(cfg.HTTPAddr, engine),
+		newServer(cfg.MetricsAddr, metricsMux),
 	}
 	errs := make(chan error, len(servers))
 	for _, srv := range servers {
