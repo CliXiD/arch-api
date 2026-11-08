@@ -186,6 +186,93 @@ func TestProblems(t *testing.T) {
 	}
 }
 
+func TestAuthUnavailable(t *testing.T) {
+	s := newTestServer(t, nil)
+	s.realm.SetDown(true)
+	start := time.Now()
+	clock := start
+	s.engine = httpapi.NewEngine(httpapi.Deps{
+		Auth: auth.NewVerifier(auth.Options{
+			Issuer: s.realm.Issuer(), Audience: authtest.Audience, JWKSURL: s.realm.JWKSURL(),
+			Now:    func() time.Time { return clock },
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		}),
+		Ready:   fakeReady{health.Report{Status: "ok"}},
+		Logger:  observability.NewLogger(io.Discard, slog.LevelDebug),
+		Metrics: observability.NewMetrics(),
+	})
+	token := s.token(t, nil, "viewer")
+
+	rec := s.do(t, http.MethodGet, "/api/v1/me", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "no token fails before any key lookup")
+	assert.Empty(t, rec.Header().Get("Retry-After"))
+
+	for _, at := range []time.Duration{0, 4 * time.Second} {
+		clock = start.Add(at)
+		rec = s.do(t, http.MethodGet, "/api/v1/me", bearer(token))
+		require.Equal(t, http.StatusServiceUnavailable, rec.Code, "at +%s", at)
+		assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+		assert.Equal(t, "5", rec.Header().Get("Retry-After"))
+		var p problem
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+		assert.Equal(t, problem{
+			Type: "/problems/auth-unavailable", Title: "Service Unavailable", Status: http.StatusServiceUnavailable,
+			Detail: "signing keys are not available yet; try again",
+		}, p)
+		assert.NotContains(t, rec.Body.String(), token, "detail never contains the token")
+	}
+
+	rec = s.do(t, http.MethodGet, "/api/v1/me", nil)
+	assert.Equal(t, http.StatusUnauthorized, rec.Code, "no token stays 401 while the keys are unavailable")
+
+	s.realm.SetDown(false)
+	clock = start.Add(auth.FailureBackoff)
+	rec = s.do(t, http.MethodGet, "/api/v1/me", bearer(token))
+	assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+}
+
+func TestBodyLimit(t *testing.T) {
+	s := newTestServer(t, nil)
+	tests := []struct {
+		name    string
+		size    int
+		chunked bool
+		want413 bool
+	}{
+		{"exactly 1 MB", httpapi.MaxBodyBytes, false, false},
+		{"exactly 1 MB chunked", httpapi.MaxBodyBytes, true, false},
+		{"1 MB + 1 byte with Content-Length", httpapi.MaxBodyBytes + 1, false, true},
+		{"1 MB + 1 byte chunked", httpapi.MaxBodyBytes + 1, true, true},
+	}
+	for _, method := range []string{http.MethodPost, http.MethodGet} {
+		for _, path := range []string{"/api/v1/me", "/healthz"} {
+			for _, tt := range tests {
+				t.Run(method+" "+path+" "+tt.name, func(t *testing.T) {
+					req := httptest.NewRequest(method, path, bytes.NewReader(bytes.Repeat([]byte("a"), tt.size)))
+					if tt.chunked {
+						req.ContentLength = -1
+						req.TransferEncoding = []string{"chunked"}
+					}
+					rec := httptest.NewRecorder()
+					s.engine.ServeHTTP(rec, req)
+					if !tt.want413 {
+						assert.NotEqual(t, http.StatusRequestEntityTooLarge, rec.Code)
+						return
+					}
+					require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+					assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+					var p problem
+					require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+					assert.Equal(t, problem{
+						Type: "/problems/too-large", Title: "Request Entity Too Large",
+						Status: http.StatusRequestEntityTooLarge, Detail: "request body exceeds 1 MB",
+					}, p)
+				})
+			}
+		}
+	}
+}
+
 func TestHealth(t *testing.T) {
 	tests := []struct {
 		name       string

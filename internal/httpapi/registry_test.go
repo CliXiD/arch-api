@@ -17,7 +17,7 @@ import (
 
 // violations walks every operation in the OpenAPI document and reports each one without a
 // declared minimum role, or public outside /healthz and /readyz, or an /api/v1 operation without
-// the bearer security and 401/403 responses.
+// the bearer security and 401/403/413/503 responses.
 func violations(oapi *huma.OpenAPI) []string {
 	var out []string
 	for path, item := range oapi.Paths {
@@ -39,8 +39,8 @@ func violations(oapi *huma.OpenAPI) []string {
 				if len(op.Security) != 1 || op.Security[0][httpapi.BearerScheme] == nil {
 					out = append(out, name+": no bearer security")
 				}
-				if op.Responses["401"] == nil || op.Responses["403"] == nil {
-					out = append(out, name+": 401/403 not documented")
+				if op.Responses["401"] == nil || op.Responses["403"] == nil || op.Responses["413"] == nil || op.Responses["503"] == nil {
+					out = append(out, name+": 401/403/413/503 not documented")
 				}
 			}
 		}

@@ -4,7 +4,9 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -41,6 +43,8 @@ const (
 	ProblemForbidden       = "/problems/forbidden"
 	ProblemNotFound        = "/problems/not-found"
 	ProblemValidation      = "/problems/validation"
+	ProblemAuthUnavailable = "/problems/auth-unavailable"
+	ProblemTooLarge        = "/problems/too-large"
 )
 
 // Authenticator validates the `Authorization` header value.
@@ -67,7 +71,8 @@ func NewAPI(r *gin.Engine, d Deps) huma.API {
 }
 
 // register is the only way operations are added. It records the minimum role in the operation's
-// metadata, and gives /api/v1 operations the bearer security and the 401/403 problem responses.
+// metadata, and gives /api/v1 operations the bearer security and the 401, 403, 413 and 503 problem
+// responses.
 func register[I, O any](api huma.API, op huma.Operation, minRole Access, handler func(context.Context, *I) (*O, error)) {
 	if op.Metadata == nil {
 		op.Metadata = map[string]any{}
@@ -75,13 +80,15 @@ func register[I, O any](api huma.API, op huma.Operation, minRole Access, handler
 	op.Metadata[MetadataMinRole] = minRole
 	if strings.HasPrefix(op.Path, "/api/v1/") {
 		op.Security = []map[string][]string{{BearerScheme: {}}}
-		op.Errors = append(op.Errors, http.StatusUnauthorized, http.StatusForbidden)
+		op.Errors = append(op.Errors, http.StatusUnauthorized, http.StatusForbidden,
+			http.StatusRequestEntityTooLarge, http.StatusServiceUnavailable)
 	}
 	huma.Register(api, op, handler)
 }
 
-// accessMiddleware enforces each operation's minimum role: 401 without a valid token, 403 when
-// the role is too low or the operation declares none.
+// accessMiddleware enforces each operation's minimum role: 401 without a valid token, 503 (with
+// Retry-After) while the signing keys have never been loaded, 403 when the role is too low or the
+// operation declares none.
 func accessMiddleware(authn Authenticator) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		op := ctx.Operation()
@@ -101,6 +108,11 @@ func accessMiddleware(authn Authenticator) func(huma.Context, func(huma.Context)
 		}
 
 		p, err := authn.Authenticate(ctx.Context(), ctx.Header("Authorization"))
+		if errors.Is(err, auth.ErrUnavailable) {
+			ctx.SetHeader("Retry-After", strconv.Itoa(int(auth.FailureBackoff.Seconds())))
+			writeProblem(ctx, http.StatusServiceUnavailable, ProblemAuthUnavailable, "signing keys are not available yet; try again")
+			return
+		}
 		if err != nil {
 			writeProblem(ctx, http.StatusUnauthorized, ProblemUnauthenticated, "a valid bearer token is required")
 			return
@@ -143,9 +155,15 @@ func newProblem(status int, msg string, errs ...error) huma.StatusError {
 
 // writeProblem writes an RFC 9457 problem. detail is fixed text: never a token, claim or header.
 func writeProblem(ctx huma.Context, status int, problemType, detail string) {
-	ctx.SetHeader("Content-Type", "application/problem+json")
-	ctx.SetStatus(status)
-	_ = json.NewEncoder(ctx.BodyWriter()).Encode(huma.ErrorModel{
+	writeHTTPProblem(humagin.Unwrap(ctx).Writer, status, problemType, detail)
+}
+
+// writeHTTPProblem writes an RFC 9457 problem to w; every problem the API writes itself goes
+// through it. detail is fixed text: never a token, claim or header.
+func writeHTTPProblem(w http.ResponseWriter, status int, problemType, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(huma.ErrorModel{
 		Type:   problemType,
 		Title:  http.StatusText(status),
 		Status: status,
