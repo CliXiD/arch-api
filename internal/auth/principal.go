@@ -26,6 +26,7 @@ const (
 type Principal struct {
 	Subject   string
 	Name      string
+	Username  string // preferred_username; for a service account, its client id
 	Email     string
 	Roles     []Role
 	Teams     []string
@@ -75,8 +76,8 @@ func EffectiveRoles(realmRoles []string) []Role {
 }
 
 // PrincipalFromClaims maps validated claims to a Principal. A token is a service account only when
-// its `client_id` claim is set and equals `azp`; it is then identified by that client id. Every
-// other token is a user, whatever its username.
+// its `client_id` claim is set and equals `azp`; it is then identified by that client id (subject,
+// name and username). Every other token is a user, whatever its username.
 func PrincipalFromClaims(c Claims) Principal {
 	p := Principal{
 		Roles:     EffectiveRoles(c.RealmAccess.Roles),
@@ -84,6 +85,7 @@ func PrincipalFromClaims(c Claims) Principal {
 		ActorKind: ActorUser,
 		Subject:   c.Subject,
 		Name:      c.Name,
+		Username:  c.PreferredUsername,
 		Email:     c.Email,
 	}
 	if p.Teams == nil {
@@ -93,6 +95,7 @@ func PrincipalFromClaims(c Claims) Principal {
 		p.ActorKind = ActorService
 		p.Subject = c.ClientID
 		p.Name = c.ClientID
+		p.Username = c.ClientID
 		return p
 	}
 	if p.Name == "" {

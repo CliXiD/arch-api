@@ -47,7 +47,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 				c.RealmAccess.Roles = []string{"default-roles-arch", "editor"}
 			}),
 			want: auth.Principal{
-				Subject: "user-sub", Name: "Editor Local", Email: "editor@example.test",
+				Subject: "user-sub", Name: "Editor Local", Username: "editor", Email: "editor@example.test",
 				Roles: []auth.Role{"viewer", "editor"}, Teams: []string{"platform"}, ActorKind: "user",
 			},
 		},
@@ -55,7 +55,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 			name:   "name falls back to preferred_username, teams and email empty",
 			claims: claims(func(c *auth.Claims) { c.RealmAccess.Roles = []string{"viewer"} }),
 			want: auth.Principal{
-				Subject: "user-sub", Name: "editor", Email: "",
+				Subject: "user-sub", Name: "editor", Username: "editor", Email: "",
 				Roles: []auth.Role{"viewer"}, Teams: []string{}, ActorKind: "user",
 			},
 		},
@@ -67,7 +67,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 				RealmAccess: auth.RealmAccess{Roles: []string{"default-roles-arch", "editor"}},
 			},
 			want: auth.Principal{
-				Subject: "arch-ci-platform", Name: "arch-ci-platform",
+				Subject: "arch-ci-platform", Name: "arch-ci-platform", Username: "arch-ci-platform",
 				Roles: []auth.Role{"viewer", "editor"}, Teams: []string{"platform"}, ActorKind: "service",
 			},
 		},
@@ -78,7 +78,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 				PreferredUsername: "service-account-arch-ci-platform",
 			},
 			want: auth.Principal{
-				Subject: "svc-sub", Name: "service-account-arch-ci-platform",
+				Subject: "svc-sub", Name: "service-account-arch-ci-platform", Username: "service-account-arch-ci-platform",
 				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
 			},
 		},
@@ -89,7 +89,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 				PreferredUsername: "editor",
 			},
 			want: auth.Principal{
-				Subject: "user-sub", Name: "Editor Local",
+				Subject: "user-sub", Name: "Editor Local", Username: "editor",
 				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
 			},
 		},
@@ -99,7 +99,7 @@ func TestPrincipalFromClaims(t *testing.T) {
 				Subject: "user-sub", AuthorizedParty: "arch-web", PreferredUsername: "editor",
 			},
 			want: auth.Principal{
-				Subject: "user-sub", Name: "editor",
+				Subject: "user-sub", Name: "editor", Username: "editor",
 				Roles: []auth.Role{}, Teams: []string{}, ActorKind: "user",
 			},
 		},
