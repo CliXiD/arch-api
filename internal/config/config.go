@@ -30,6 +30,11 @@ type Migrate struct {
 	DatabaseURL string
 }
 
+// Seed is the configuration of `arch-api seed`.
+type Seed struct {
+	DatabaseURL string
+}
+
 // Error lists every missing or invalid variable. It names the variables, never their values.
 type Error struct {
 	Missing []string
@@ -144,6 +149,16 @@ func LoadMigrate(getenv func(string) string) (Migrate, error) {
 		r.invalid(name)
 	}
 	return Migrate{DatabaseURL: dsn}, r.result()
+}
+
+// LoadSeed reads the configuration of `seed`: DATABASE_URL.
+func LoadSeed(getenv func(string) string) (Seed, error) {
+	r := &reader{getenv: getenv}
+	dsn := r.required("DATABASE_URL")
+	if dsn != "" && !isDatabaseURL(dsn) {
+		r.invalid("DATABASE_URL")
+	}
+	return Seed{DatabaseURL: dsn}, r.result()
 }
 
 func isDatabaseURL(s string) bool {

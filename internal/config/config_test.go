@@ -104,3 +104,30 @@ func TestLoadMigrate(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadSeed(t *testing.T) {
+	tests := []struct {
+		name    string
+		vars    map[string]string
+		want    string
+		wantErr string
+	}{
+		{"DATABASE_URL, no OIDC needed", map[string]string{"DATABASE_URL": "postgres://app@db/arch"}, "postgres://app@db/arch", ""},
+		{"ignores MIGRATE_DATABASE_URL", map[string]string{"MIGRATE_DATABASE_URL": "postgres://owner@db/arch", "DATABASE_URL": "postgres://app@db/arch"},
+			"postgres://app@db/arch", ""},
+		{"missing", map[string]string{"MIGRATE_DATABASE_URL": "postgres://owner@db/arch"}, "", "config: DATABASE_URL is required"},
+		{"invalid", map[string]string{"DATABASE_URL": "postgres://arch:dummy-pw@[::1"}, "", "config: DATABASE_URL is invalid"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := config.LoadSeed(env(tt.vars))
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				assert.NotContains(t, err.Error(), "dummy-pw", "never print a value")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, c.DatabaseURL)
+		})
+	}
+}
