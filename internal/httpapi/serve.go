@@ -13,6 +13,7 @@ import (
 	"github.com/CliXiD/arch-api/internal/config"
 	"github.com/CliXiD/arch-api/internal/db"
 	"github.com/CliXiD/arch-api/internal/health"
+	"github.com/CliXiD/arch-api/internal/model"
 	"github.com/CliXiD/arch-api/internal/observability"
 	"github.com/CliXiD/arch-api/migrations"
 )
@@ -60,6 +61,7 @@ func Serve(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
 			Logger:   logger,
 		}),
 		Ready:       health.Checker{DB: pool, Versions: db.VersionReader{Pool: pool}, Expected: expected},
+		Model:       model.NewService(pool),
 		Logger:      logger,
 		Metrics:     metrics,
 		CORSOrigins: cfg.CORSOrigins,

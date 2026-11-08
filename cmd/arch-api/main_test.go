@@ -18,6 +18,15 @@ func TestRun(t *testing.T) {
 		{"no args", nil, nil, 2, "usage:"},
 		{"unknown command", []string{"openapi"}, nil, 2, "usage:"},
 		{"unknown migrate command", []string{"migrate", "down"}, nil, 2, "usage:"},
+		{"seed without --sample", []string{"seed"}, nil, 2, "arch-api seed --sample"},
+		{"seed with another flag", []string{"seed", "--force"}, nil, 2, "arch-api seed --sample"},
+		{"seed with an extra argument", []string{"seed", "--sample", "dev"}, nil, 2, "usage:"},
+		{"seed without DATABASE_URL", []string{"seed", "--sample"}, map[string]string{
+			"DATABASE_URL": "", "MIGRATE_DATABASE_URL": "postgres://localhost/arch",
+		}, 1, "config: DATABASE_URL is required"},
+		{"seed with an invalid DATABASE_URL", []string{"seed", "--sample"}, map[string]string{
+			"DATABASE_URL": "postgres://arch:dummy-pw@[::1",
+		}, 1, "config: DATABASE_URL is invalid"},
 		{"serve without OIDC_ISSUER", []string{"serve"}, map[string]string{
 			"DATABASE_URL": "postgres://localhost/arch", "OIDC_ISSUER": "", "OIDC_AUDIENCE": "arch-api",
 		}, 1, "config: OIDC_ISSUER is required"},
