@@ -4,9 +4,12 @@ The Architecture E2E API: a Go REST service (gin + Huma v2) that will hold the t
 applications, infrastructure and network paths, answer impact queries, import and export YAML, and
 keep the audit log. It owns the database schema.
 
-This first slice is the walking skeleton: configuration, health and readiness, Prometheus metrics,
-JSON request logs, optional OpenTelemetry tracing, Keycloak token validation with default-deny
-roles, and `GET /api/v1/me`.
+The walking skeleton gave it configuration, health and readiness, Prometheus metrics, JSON request
+logs, optional OpenTelemetry tracing, Keycloak token validation with default-deny roles, and
+`GET /api/v1/me`. The model slice adds the typed graph: tables for node and edge types, teams,
+environments, nodes and edges, the built-in vocabulary and the `dev`, `uat` and `prod`
+environments (seeded by migration), read-only endpoints for viewers, and a sample graph for local
+development (`seed --sample`).
 
 ## Prerequisites
 
@@ -29,8 +32,12 @@ Then in this repo, with the `.env` variables exported (`set -a; . ./.env; set +a
 ```bash
 go run ./cmd/arch-api migrate up      # apply migrations (MIGRATE_DATABASE_URL)
 go run ./cmd/arch-api migrate status  # applied and pending versions
+go run ./cmd/arch-api seed --sample   # optional: sample graph (7 nodes, 6 edges) in prod (DATABASE_URL)
 go run ./cmd/arch-api serve           # API on HTTP_ADDR, metrics on METRICS_ADDR
 ```
+
+`seed --sample` is for local development. It writes the teams `platform` and `core` and the sample
+graph in one transaction, and refuses (exit `1`, nothing written) once the database has any node.
 
 `serve` starts while the database is down (`/healthz` answers, `/readyz` reports it) and stops
 on SIGINT/SIGTERM. Any other command prints the usage and exits `2`.
@@ -43,7 +50,7 @@ Read once from the environment at start-up. A missing or invalid variable stops 
 
 | var | required | default | used by |
 |---|---|---|---|
-| `DATABASE_URL` | yes | — | `serve`; `migrate` when `MIGRATE_DATABASE_URL` is unset |
+| `DATABASE_URL` | yes | — | `serve`, `seed`; `migrate` when `MIGRATE_DATABASE_URL` is unset |
 | `MIGRATE_DATABASE_URL` | no | `DATABASE_URL` | `migrate` |
 | `HTTP_ADDR` | no | `:8080` | `serve` |
 | `METRICS_ADDR` | no | `:9090` | `serve` |
@@ -62,11 +69,24 @@ Read once from the environment at start-up. A missing or invalid variable stops 
 | GET | `/healthz` | public | `200 {"status":"ok"}` |
 | GET | `/readyz` | public | `200 {"status":"ok"}`, or `503 {"status":"unavailable","failing":["database"]}` / `["migrations"]` |
 | GET | `/api/v1/me` | bearer, role `viewer` | `200` subject, name, email, roles, teams, actor_kind |
+| GET | `/api/v1/types` | bearer, role `viewer` | `200 {node_types, edge_types}`, each ordered by id |
+| GET | `/api/v1/teams` | bearer, role `viewer` | `200 {items}`, ordered by id |
+| GET | `/api/v1/environments` | bearer, role `viewer` | `200 {items}`, ordered by sort |
+| GET | `/api/v1/nodes` | bearer, role `viewer` | `200 {items, next_cursor}`; filters `environment`, `kind`, `type`, `owner`, `q`; `limit`, `cursor` |
+| GET | `/api/v1/nodes/{environment}/{id}` | bearer, role `viewer` | `200` node with `ETag: "<version>"`, or `404` |
+| GET | `/api/v1/edges` | bearer, role `viewer` | `200 {items, next_cursor}`; filters `environment`, `type`, `from`, `to`; `limit`, `cursor` |
+| GET | `/api/v1/graph?environment=` | bearer, role `viewer` | `200 {environment, nodes, edges}`, compact; gzip when accepted |
 | GET | `/metrics` | public, on `METRICS_ADDR` only | Prometheus text |
 
 Every `/api/v1` route answers `401` (`/problems/unauthenticated`) without a valid token and `403`
 (`/problems/forbidden`) when the role is too low, as RFC 9457 `application/problem+json`. Every
 operation is registered with a minimum role; a unit test fails when one is missing.
+
+Pages hold `limit` items (default `100`, `1` to `500`) in a stable order: nodes by
+`(environment, id)`, edges by `(environment, type, from, to)`. Pass `next_cursor` back as `cursor`
+for the next page; it is `null` on the last one. A bad `limit`, `cursor` or `kind`, an unknown
+`environment`, or a `q` over 200 characters gives `422` (`/problems/validation`); an unknown node
+gives `404` (`/problems/not-found`). Problems never echo the received values.
 
 ## OpenAPI
 
@@ -76,6 +96,15 @@ it by hand.
 ```bash
 make openapi        # regenerate api/openapi.yaml; commit it with the change
 make openapi-check  # fail when the committed file is stale (writes only a temp file)
+```
+
+## Database code
+
+Queries are SQL in `internal/db/queries/`; sqlc generates typed Go for them in `internal/db/dbq`
+from those files and the schema in `migrations/`. Never edit `internal/db/dbq` by hand.
+
+```bash
+make sqlc           # go tool sqlc generate; commit the result with the query change
 ```
 
 ## Checks
@@ -91,23 +120,38 @@ go build ./...
 make openapi-check
 ```
 
+Integration tests run against a real PostgreSQL 16 in a container (testcontainers), so they need
+podman or docker. They sit behind the `integration` build tag and stay out of the checks above:
+
+```bash
+go test -tags integration -count=1 ./...
+```
+
+With podman, point testcontainers at its socket, for example
+`DOCKER_HOST=unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')`
+and `TESTCONTAINERS_RYUK_DISABLED=true`.
+
 ## Layout
 
 ```
-cmd/arch-api         subcommand dispatch: serve, migrate up|status
+cmd/arch-api         subcommand dispatch: serve, migrate up|status, seed --sample
 cmd/openapi          prints the OpenAPI YAML (make openapi)
 internal/config      environment parsing and validation
 internal/auth        JWKS cache, token validation, roles, Principal
 internal/httpapi     gin engine, Huma API, middleware, routes, handlers
+internal/model       model reads (paging, cursors, graph) and the sample seed
 internal/health      readiness checks
 internal/observability  slog, Prometheus metrics, OpenTelemetry
 internal/db          pgxpool and goose
+internal/db/queries  SQL queries for sqlc
+internal/db/dbq      sqlc output (make sqlc); never edit by hand
 migrations           goose SQL migrations, embedded; never edit an existing one
 ```
 
 ## Documents
 
-In the hub's `docs/`: specs `specs/001_identity-access.md` and `specs/009_operations.md`; ADRs
+In the hub's `docs/`: specs `specs/001_identity-access.md`, `specs/002_model.md` and
+`specs/009_operations.md`; ADRs
 `adr/0003` (gin + Huma), `adr/0004` (database and migrations), `adr/0008` (Keycloak),
 `adr/0010` (CI), `adr/0011` (observability), `adr/0013` (runtime versions) and `adr/0014`
 (database roles).
