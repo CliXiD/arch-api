@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
@@ -58,39 +60,73 @@ func (c client) json(t *testing.T, path string, out any) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), out))
 }
 
-// TestModelIntegration runs the migrations, the seed command and the read API against a real
-// PostgreSQL 16. Needs podman or docker: go test -tags integration ./...
-func TestModelIntegration(t *testing.T) {
+// startPostgres starts PostgreSQL 16 with the owner `arch`, creates the runtime role `arch_app`
+// (as the hub's init script and the deploy do), runs the migrations as the owner, and returns the
+// owner's and arch_app's connection strings.
+func startPostgres(t *testing.T) (owner, app string) {
+	t.Helper()
 	ctx := context.Background()
 	pg, err := postgres.Run(ctx, "postgres:16",
 		postgres.WithDatabase("arch"), postgres.WithUsername("arch"), postgres.WithPassword("arch"),
 		postgres.BasicWaitStrategies())
 	testcontainers.CleanupContainer(t, pg)
 	require.NoError(t, err)
-	dsn, err := pg.ConnectionString(ctx, "sslmode=disable")
+	owner, err = pg.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	require.NoError(t, db.Migrate(ctx, dsn, "up", io.Discard))
+	conn, err := pgx.Connect(ctx, owner)
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, "CREATE ROLE arch_app LOGIN PASSWORD 'arch_app'")
+	require.NoError(t, err)
+	require.NoError(t, conn.Close(ctx))
+
+	require.NoError(t, db.Migrate(ctx, owner, "up", io.Discard))
+
+	u, err := url.Parse(owner)
+	require.NoError(t, err)
+	u.User = url.UserPassword("arch_app", "arch_app")
+	return owner, u.String()
+}
+
+// newPool returns a pool for dsn, closed when the test ends.
+func newPool(t *testing.T, dsn string) *pgxpool.Pool {
+	t.Helper()
 	pool, err := db.NewPool(dsn, false)
 	require.NoError(t, err)
 	t.Cleanup(pool.Close)
+	return pool
+}
 
+// newEngine returns the API over pool, as `serve` builds it, and the test realm signing its tokens.
+func newEngine(t *testing.T, pool *pgxpool.Pool) (*gin.Engine, *authtest.Realm, authtest.Key) {
+	t.Helper()
 	key := authtest.NewKey(t, "k1")
 	realm := authtest.NewRealm(t, key)
 	gin.SetMode(gin.TestMode)
-	c := client{
-		engine: httpapi.NewEngine(httpapi.Deps{
-			Auth: auth.NewVerifier(auth.Options{
-				Issuer: realm.Issuer(), Audience: authtest.Audience, JWKSURL: realm.JWKSURL(),
-				Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
-			}),
-			Ready:   okReady{},
-			Model:   model.NewService(pool),
-			Logger:  observability.NewLogger(io.Discard, slog.LevelInfo),
-			Metrics: observability.NewMetrics(),
+	svc := model.NewService(pool)
+	engine := httpapi.NewEngine(httpapi.Deps{
+		Auth: auth.NewVerifier(auth.Options{
+			Issuer: realm.Issuer(), Audience: authtest.Audience, JWKSURL: realm.JWKSURL(),
+			Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		}),
-		token: authtest.Sign(t, key, realm.Claims(time.Now(), "viewer")),
-	}
+		Ready:   okReady{},
+		Model:   svc,
+		Writer:  svc,
+		Logger:  observability.NewLogger(io.Discard, slog.LevelInfo),
+		Metrics: observability.NewMetrics(),
+	})
+	return engine, realm, key
+}
+
+// TestModelIntegration runs the migrations as the owner, then the seed command and the read API as
+// the runtime role arch_app, against a real PostgreSQL 16. Needs podman or docker:
+// go test -tags integration ./...
+func TestModelIntegration(t *testing.T) {
+	ctx := context.Background()
+	_, dsn := startPostgres(t)
+	pool := newPool(t, dsn)
+	engine, realm, key := newEngine(t, pool)
+	c := client{engine: engine, token: authtest.Sign(t, key, realm.Claims(time.Now(), "viewer"))}
 
 	t.Run("seeded vocabulary", func(t *testing.T) {
 		var types model.Types

@@ -72,6 +72,7 @@ func Serve(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
 	metrics := observability.NewMetrics()
 	metrics.RegisterPool(pool)
 
+	svc := model.NewService(pool)
 	gin.SetMode(gin.ReleaseMode)
 	engine := NewEngine(Deps{
 		Auth: auth.NewVerifier(auth.Options{
@@ -81,7 +82,8 @@ func Serve(ctx context.Context, cfg config.Serve, logger *slog.Logger) error {
 			Logger:   logger,
 		}),
 		Ready:       health.Checker{DB: pool, Versions: db.VersionReader{Pool: pool}, Expected: expected},
-		Model:       model.NewService(pool),
+		Model:       svc,
+		Writer:      svc,
 		Logger:      logger,
 		Metrics:     metrics,
 		CORSOrigins: cfg.CORSOrigins,

@@ -1,0 +1,84 @@
+package model
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// callsSchema is the seeded schema of the `calls` edge type.
+const callsSchema = `{"type":"object","properties":{
+	"protocol":{"type":"string","enum":["http","https","grpc","tcp","amqp","kafka","other"]},
+	"port":{"type":"number","minimum":1,"maximum":65535}}}`
+
+func decode(t *testing.T, s string) map[string]any {
+	t.Helper()
+	m := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(s), &m))
+	return m
+}
+
+func TestValidateAttributes(t *testing.T) {
+	open := `{"type":"object","properties":{}}`
+	strict := `{"type":"object","required":["tier"],"additionalProperties":false,"properties":{
+		"tier":{"type":"string"},"zones":{"type":"array","items":{"type":"string"}},"public":{"type":"boolean"}}}`
+	tests := []struct {
+		name   string
+		schema string
+		attrs  string
+		want   ValidationErrors
+	}{
+		{"seeded calls edge", callsSchema, `{"protocol":"https","port":443}`, nil},
+		{"no attributes", callsSchema, `{}`, nil},
+		{"undeclared supported values are allowed", open, `{"team_page":"x","replicas":3,"public":true,"zones":["a","b"]}`, nil},
+		{"object value", open, `{"settings":{"a":1}}`,
+			ValidationErrors{{Location: "body.attributes.settings", Message: "unsupported attribute type"}}},
+		{"null value", open, `{"note":null}`,
+			ValidationErrors{{Location: "body.attributes.note", Message: "unsupported attribute type"}}},
+		{"mixed array", open, `{"zones":["a",1]}`,
+			ValidationErrors{{Location: "body.attributes.zones", Message: "unsupported attribute type"}}},
+		{"port over maximum", callsSchema, `{"port":70000}`,
+			ValidationErrors{{Location: "body.attributes.port", Message: "must be at most 65535"}}},
+		{"port under minimum", callsSchema, `{"port":0}`,
+			ValidationErrors{{Location: "body.attributes.port", Message: "must be at least 1"}}},
+		{"port as a string", callsSchema, `{"port":"443"}`,
+			ValidationErrors{{Location: "body.attributes.port", Message: "must be of type number"}}},
+		{"protocol not in enum", callsSchema, `{"protocol":"smtp"}`,
+			ValidationErrors{{Location: "body.attributes.protocol", Message: "is not one of the allowed values"}}},
+		{"every failure, ordered by location", callsSchema, `{"protocol":"smtp","port":70000,"extra":{}}`,
+			ValidationErrors{
+				{Location: "body.attributes.extra", Message: "unsupported attribute type"},
+				{Location: "body.attributes.port", Message: "must be at most 65535"},
+				{Location: "body.attributes.protocol", Message: "is not one of the allowed values"},
+			}},
+		{"strict schema valid", strict, `{"tier":"gold","zones":["a"],"public":false}`, nil},
+		{"required missing and undeclared rejected", strict, `{"zones":["a"],"color":"red"}`,
+			ValidationErrors{
+				{Location: "body.attributes.color", Message: "is not allowed by the type's schema"},
+				{Location: "body.attributes.tier", Message: "is required"},
+			}},
+		{"boolean of the wrong type", strict, `{"tier":"gold","public":"yes"}`,
+			ValidationErrors{{Location: "body.attributes.public", Message: "must be of type boolean"}}},
+		{"array of the wrong type", strict, `{"tier":"gold","zones":"a"}`,
+			ValidationErrors{{Location: "body.attributes.zones", Message: "must be of type array"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := validateAttributes(decode(t, tt.schema), decode(t, tt.attrs))
+			assert.Equal(t, tt.want, got)
+			for _, e := range got {
+				assert.NotContains(t, e.Message, "70000", "messages never hold the value")
+				assert.NotContains(t, e.Message, "smtp", "messages never hold the value")
+			}
+		})
+	}
+}
+
+func TestCheckKindPair(t *testing.T) {
+	runsOn := []KindPair{{From: "application", To: "infrastructure"}}
+	assert.Nil(t, checkKindPair("runs_on", runsOn, "application", "infrastructure"))
+	assert.Equal(t, &ValidationError{Location: "body.to", Message: "edge type runs_on does not allow application → network"},
+		checkKindPair("runs_on", runsOn, "application", "network"))
+}
