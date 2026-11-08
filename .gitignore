@@ -1,0 +1,18 @@
+# Local env (dummy values from the hub's dev/bin/apply-env); only the example is committed
+.env
+.env.*
+!.env.example
+
+# Build output
+/bin/
+/dist/
+
+# Test and coverage output
+*.test
+*.out
+coverage.*
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
