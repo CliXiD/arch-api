@@ -32,6 +32,26 @@ func TestCheckSecrets(t *testing.T) {
 		{"AKIA too short", map[string]any{"key_id": "AKIAIOSFODNN7"}, nil},
 		{"array element", map[string]any{"urls": []any{"https://a.test", "https://u:p@b.test"}},
 			[]string{"body.attributes.urls[1]"}},
+		{"URL password with a slash", map[string]any{"dsn": "postgres://u:p/w@h"}, []string{"body.attributes.dsn"}},  //nolint:gosec // test fixture
+		{"URL password with an at sign", map[string]any{"dsn": "https://u:p@ss@h"}, []string{"body.attributes.dsn"}}, //nolint:gosec // test fixture
+		{"URL password with a colon", map[string]any{"dsn": "mysql://u:a:b@h"}, []string{"body.attributes.dsn"}},     //nolint:gosec // test fixture
+		{"URL with a port", map[string]any{"url": "https://example.test:8443/path"}, nil},
+		// An accepted false positive: host:port with an @ later in the URL reads as a password;
+		// [NFR-002] errs towards rejecting.
+		{"URL with a port and a later at sign", map[string]any{"url": "https://example.test:8443/a@b"},
+			[]string{"body.attributes.url"}},
+		{"tokens_per_minute name", map[string]any{"tokens_per_minute": float64(1)}, nil},
+		{"max_tokens name", map[string]any{"max_tokens": float64(1)}, nil},
+		{"maxTokens name", map[string]any{"maxTokens": float64(1)}, nil},
+		{"tokenizer name", map[string]any{"tokenizer": "x"}, nil},
+		{"api_token name", map[string]any{"api_token": "x"}, []string{"body.attributes.api_token"}},
+		{"access_token name", map[string]any{"access_token": "x"}, []string{"body.attributes.access_token"}},
+		{"apiToken name", map[string]any{"apiToken": "x"}, []string{"body.attributes.apiToken"}},
+		{"APIToken name", map[string]any{"APIToken": "x"}, []string{"body.attributes.APIToken"}},
+		{"ACCESS_TOKEN name", map[string]any{"ACCESS_TOKEN": "x"}, []string{"body.attributes.ACCESS_TOKEN"}},
+		{"accesstoken name", map[string]any{"accesstoken": "x"}, []string{"body.attributes.accesstoken"}},
+		{"refreshToken2 name", map[string]any{"refreshToken2": "x"}, []string{"body.attributes.refreshToken2"}},
+		{"client_secret name", map[string]any{"client_secret": "x"}, []string{"body.attributes.client_secret"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
