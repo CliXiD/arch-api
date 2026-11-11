@@ -203,6 +203,7 @@ const getEdgeType = `-- name: GetEdgeType :one
 SELECT id, attributes_schema, allowed
 FROM edge_types
 WHERE id = $1
+FOR SHARE
 `
 
 type GetEdgeTypeRow struct {
@@ -222,6 +223,7 @@ const getNodeType = `-- name: GetNodeType :one
 SELECT id, kind, attributes_schema
 FROM node_types
 WHERE id = $1
+FOR SHARE
 `
 
 type GetNodeTypeRow struct {

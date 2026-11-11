@@ -1,12 +1,14 @@
 -- name: GetNodeType :one
 SELECT id, kind, attributes_schema
 FROM node_types
-WHERE id = $1;
+WHERE id = $1
+FOR SHARE;
 
 -- name: GetEdgeType :one
 SELECT id, attributes_schema, allowed
 FROM edge_types
-WHERE id = $1;
+WHERE id = $1
+FOR SHARE;
 
 -- name: TeamExists :one
 SELECT EXISTS (SELECT 1 FROM teams WHERE id = $1);
