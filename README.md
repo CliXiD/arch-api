@@ -108,6 +108,12 @@ Read once from the environment at start-up. A missing or invalid variable stops 
 | POST | `/api/v1/environments` | bearer, role `admin` | `201` environment; `409` (id or `sort` taken), `422` |
 | PATCH | `/api/v1/environments/{id}` | bearer, role `admin` | `200` environment; `404`, `409` |
 | DELETE | `/api/v1/environments/{id}` | bearer, role `admin` | `204`; `409 /problems/in-use` while it holds nodes |
+| POST | `/api/v1/admin/types/node-types` | bearer, role `admin` | `201` node type (`builtin: false`); `409`, `422` |
+| PATCH | `/api/v1/admin/types/node-types/{id}` | bearer, role `admin` | `200` node type; `404`, `409` (built-in loses an attribute, or existing nodes would fail, with `count`), `422` |
+| DELETE | `/api/v1/admin/types/node-types/{id}` | bearer, role `admin` | `204`; `404`, `409` (built-in), `409 /problems/in-use` while nodes use it |
+| POST | `/api/v1/admin/types/edge-types` | bearer, role `admin` | `201` edge type (`builtin: false`); `409`, `422` |
+| PATCH | `/api/v1/admin/types/edge-types/{id}` | bearer, role `admin` | `200` edge type; `404`, `409` (built-in loses an attribute, or existing edges would fail, with `count`), `422` |
+| DELETE | `/api/v1/admin/types/edge-types/{id}` | bearer, role `admin` | `204`; `404`, `409` (built-in), `409 /problems/in-use` while edges use it |
 | GET | `/api/v1/history?entity=node&environment=&id=` | bearer, role `viewer` | `200 {items, next_cursor}`: the node's and its edges' change_log rows, newest first; `limit` (default `50`), `cursor` |
 | GET | `/metrics` | public, on `METRICS_ADDR` only | Prometheus text |
 
@@ -135,7 +141,8 @@ Every successful write runs in one transaction that also appends one `change_log
 entity: who (`actor` = token subject, `actor_name` = username, `actor_kind` `user` or `service`;
 a service account is its client id), `source` (`ui` for a user token, `api` for a service
 account; the node or edge written gets the same `source`), `entity` (`node`, `edge`, `team`,
-`environment`), `entity_key` (`<environment>/<id>`, the edge uid, or the id), `action` and the
+`environment`, `type`), `entity_key` (`<environment>/<id>`, the edge uid, `node/<id>` or
+`edge/<id>` for a node or edge type, or the id), `action` and the
 entity's JSON `before` and `after`. A rejected write leaves no row. A trigger rejects `UPDATE`,
 `DELETE` and `TRUNCATE` on `change_log` for every role, the owner included.
 
@@ -148,8 +155,8 @@ entity's JSON `before` and `after`. A rejected write leaves no row. A trigger re
   of the token's `teams` (an owner change needs both the old and the new team), and an edge only
   when it may write its `from` node. Otherwise `403` (`/problems/forbidden`), `detail`
   `node is owned by team <team>`. Deleting a node deletes every edge from or to it, whoever owns
-  the other end. Teams and environments are admin-only. An `owner` that is not an existing team
-  gives `422` at `body.owner` (`team does not exist`) before any team-membership check.
+  the other end. Teams, environments and types are admin-only. An `owner` that is not an existing
+  team gives `422` at `body.owner` (`team does not exist`) before any team-membership check.
 - **Patches.** Each field present replaces the stored value; `tags` and `attributes` are replaced
   whole. `id`, `type`, `environment`, `from` and `to` cannot change: `422` at `body.<field>`.
 - **Attributes** are checked against the type's `attributes_schema` (`type`, `enum`, `minimum`,
@@ -163,13 +170,27 @@ entity's JSON `before` and `after`. A rejected write leaves no row. A trigger re
   password holds), a PEM header or an AWS access key id, give `422` (`/problems/secret-detected`)
   with one `errors[]` entry per attribute (`body.attributes.<name>`, `message`
   `looks like a secret`). Values are never echoed or logged.
+- **Types.** A type's `attributes_schema` must use exactly the subset above: `type: "object"`,
+  `properties` (may be `{}`), `required` (declared names, each once) and `additionalProperties`
+  (boolean); per property a `type` of `string`, `number`, `boolean` or `array`, with `enum`
+  (string or number, non-empty), `minimum`/`maximum` (number, minimum not above maximum) and
+  `items: {"type": "string"}` (array, required). Anything else, an unknown keyword included, gives
+  `422` at `body.attributes_schema`, `body.attributes_schema.properties.<name>` or
+  `body.attributes_schema.required`. Property names follow the secret name rules
+  (`422 /problems/secret-detected` at `body.attributes_schema.properties.<name>`). A changed schema
+  or `allowed` is checked against every existing node or edge of the type: when any would fail,
+  `409` (`/problems/conflict`) with `count`, the number of failing nodes or edges. `id` and `kind`
+  cannot change. Built-in types can be renamed and gain attributes, but can't lose one or be
+  deleted. A type change waits for node and edge writes of that type, and the reverse.
 
 | status | type | when |
 |---|---|---|
 | 403 | `/problems/forbidden` | role too low, or the editor lacks the node's team |
-| 404 | `/problems/not-found` | the node, edge, team or environment in the path does not exist |
-| 409 | `/problems/conflict` | duplicate node, edge (`environment, type, from, to`), team or environment id or `sort` |
-| 409 | `/problems/in-use` | deleting a team that owns nodes or an environment that holds nodes; `count` is the number of nodes |
+| 404 | `/problems/not-found` | the node, edge, type, team or environment in the path does not exist (`node type not found`, `edge type not found`) |
+| 409 | `/problems/conflict` | duplicate node, edge (`environment, type, from, to`), node or edge type, team or environment id or `sort` |
+| 409 | `/problems/conflict` | deleting a built-in type, or a built-in type losing an attribute; no `count` |
+| 409 | `/problems/conflict` | a type change existing nodes or edges would fail; `count` is the number of them |
+| 409 | `/problems/in-use` | deleting a team that owns nodes, an environment that holds nodes, or a type nodes or edges use; `count` is the number of them |
 | 412 | `/problems/stale` | `If-Match` is not the current version |
 | 422 | `/problems/validation` | request schema, unknown reference, attribute schema, kind pair; one `errors[]` entry per field |
 | 422 | `/problems/secret-detected` | an attribute looks like a secret |
@@ -248,7 +269,7 @@ migrations           goose SQL migrations, embedded; never edit an existing one
 ## Documents
 
 In the hub's `docs/`: specs `specs/001_identity-access.md`, `specs/002_model.md`,
-`specs/003_editing-history.md` and `specs/009_operations.md`; ADRs
+`specs/003_editing-history.md`, `specs/008_admin.md` and `specs/009_operations.md`; ADRs
 `adr/0003` (gin + Huma), `adr/0004` (database and migrations), `adr/0005` (change log),
 `adr/0008` (Keycloak),
 `adr/0010` (CI), `adr/0011` (observability), `adr/0013` (runtime versions) and `adr/0014`
