@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -203,13 +204,22 @@ func TestTypeWriteIntegration(t *testing.T) {
 		assert.Equal(t, "built-in types can't lose attributes", p.Detail)
 		assert.Nil(t, p.Count)
 
+		var calls model.EdgeType
+		for _, et := range listTypes(t).EdgeTypes {
+			if et.ID == "calls" {
+				calls = et
+			}
+		}
+		props, _ := calls.AttributesSchema["properties"].(map[string]any)
+		require.Contains(t, props, "port")
+		props["timeout_ms"] = map[string]any{"type": "number", "minimum": 0}
+		body, err := json.Marshal(map[string]any{"attributes_schema": calls.AttributesSchema})
+		require.NoError(t, err)
 		var et model.EdgeType
-		admin.expect(t, http.StatusOK, http.MethodPatch, edgeTypes+"/calls", "",
-			`{"attributes_schema":{"type":"object","properties":{
-				"protocol":{"type":"string","enum":["http","https","grpc","tcp","amqp","kafka","other"]},
-				"port":{"type":"number","minimum":1,"maximum":65535},"timeout_ms":{"type":"number","minimum":0}}}}`, &et)
+		admin.expect(t, http.StatusOK, http.MethodPatch, edgeTypes+"/calls", "", string(body), &et)
 		assert.True(t, et.Builtin)
 		assert.Contains(t, et.AttributesSchema["properties"], "timeout_ms")
+		assert.Contains(t, et.AttributesSchema["properties"], "port", "every stored property is kept")
 		var nt model.NodeType
 		admin.expect(t, http.StatusOK, http.MethodPatch, nodeTypes+"/service", "", `{"name":"Application service"}`, &nt)
 		assert.Equal(t, "Application service", nt.Name)
