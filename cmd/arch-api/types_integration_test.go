@@ -41,6 +41,13 @@ func TestTypeWriteIntegration(t *testing.T) {
 		c["sub"], c["preferred_username"] = "admin-sub", "admin"
 	}, "admin")
 
+	service := token(func(c jwt.MapClaims) {
+		c["sub"] = "0c7f-service-account"
+		c["client_id"], c["azp"] = "arch-ci-admin", "arch-ci-admin"
+		c["preferred_username"] = "service-account-arch-ci-admin"
+		delete(c, "name")
+	}, "admin")
+
 	const (
 		nodeTypes = "/api/v1/admin/types/node-types"
 		edgeTypes = "/api/v1/admin/types/edge-types"
@@ -228,6 +235,32 @@ func TestTypeWriteIntegration(t *testing.T) {
 		assert.Equal(t, []string{"edge/calls update admin ui", "node/service update admin ui"}, typeRows(t, before))
 	})
 
+	t.Run("every seeded schema is in the subset", func(t *testing.T) {
+		before := changeCount(t, owner)
+		types := listTypes(t)
+		require.NotEmpty(t, types.NodeTypes)
+		require.NotEmpty(t, types.EdgeTypes)
+		for _, nt := range types.NodeTypes {
+			body, err := json.Marshal(map[string]any{"attributes_schema": nt.AttributesSchema})
+			require.NoError(t, err)
+			admin.expect(t, http.StatusOK, http.MethodPatch, nodeTypes+"/"+nt.ID, "", string(body), nil)
+		}
+		for _, et := range types.EdgeTypes {
+			body, err := json.Marshal(map[string]any{"attributes_schema": et.AttributesSchema, "allowed": et.Allowed})
+			require.NoError(t, err)
+			admin.expect(t, http.StatusOK, http.MethodPatch, edgeTypes+"/"+et.ID, "", string(body), nil)
+		}
+		assert.Equal(t, before, changeCount(t, owner), "re-sending the stored values is a no-op")
+	})
+
+	t.Run("a service account's type write records source api", func(t *testing.T) {
+		before := lastChangeID(t, owner)
+		service.expect(t, http.StatusCreated, http.MethodPost, nodeTypes, "",
+			`{"id":"ci-runner","kind":"infrastructure","name":"CI runner","attributes_schema":{"type":"object","properties":{}}}`, nil)
+		service.expect(t, http.StatusNoContent, http.MethodDelete, nodeTypes+"/ci-runner", "", "", nil)
+		assert.Equal(t, []string{"node/ci-runner create arch-ci-admin api", "node/ci-runner delete arch-ci-admin api"}, typeRows(t, before))
+	})
+
 	t.Run("deletes", func(t *testing.T) {
 		before := lastChangeID(t, owner)
 		admin.expect(t, http.StatusCreated, http.MethodPost, nodeTypes, "",
@@ -379,7 +412,7 @@ func TestTypeWriteIntegration(t *testing.T) {
 	}
 	assert.Equal(t, []string{
 		"node/message-broker create", "node/message-broker update", "edge/publishes_to create", "edge/publishes_to update",
-		"edge/calls update", "node/service update", "node/unused create", "edge/unused_edge create",
+		"edge/calls update", "node/service update", "node/ci-runner create", "node/ci-runner delete", "node/unused create", "edge/unused_edge create",
 		"node/unused delete", "edge/unused_edge delete",
 	}, all, "exactly one row per successful type write")
 }

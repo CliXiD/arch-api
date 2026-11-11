@@ -114,6 +114,11 @@ func TestValidateSchema(t *testing.T) {
 	}{
 		{"seeded default schema", `{"type":"object","properties":{}}`, nil},
 		{"seeded calls schema", callsSchema, nil},
+		{"seeded calls schema of migration 6", `{"type":"object","properties":{
+			"protocol":{"type":"string","enum":["http","https","grpc","tcp","amqp","kafka","postgres","otlp","other"]},
+			"port":{"type":"number","minimum":1,"maximum":65535},"path":{"type":"string"}}}`, nil},
+		{"seeded stores_data_in schema of migration 6", `{"type":"object","properties":{
+			"port":{"type":"number","minimum":1,"maximum":65535},"role":{"type":"string"}}}`, nil},
 		{"every accepted keyword", `{"type":"object","required":["tier"],"additionalProperties":false,"properties":{
 			"tier":{"type":"string","enum":["gold","silver"]},"name":{"type":"string"},
 			"replicas":{"type":"number","enum":[1,3,5]},"port":{"type":"number","minimum":1,"maximum":65535},
