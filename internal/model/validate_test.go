@@ -78,7 +78,25 @@ func TestValidateAttributes(t *testing.T) {
 
 func TestCheckKindPair(t *testing.T) {
 	runsOn := []KindPair{{From: "application", To: "infrastructure"}}
-	assert.Nil(t, checkKindPair("runs_on", runsOn, "application", "infrastructure"))
-	assert.Equal(t, &ValidationError{Location: "body.to", Message: "edge type runs_on does not allow application → network"},
-		checkKindPair("runs_on", runsOn, "application", "network"))
+	calls := []KindPair{{From: "application", To: "application"}, {From: "application", To: "external"}}
+	tests := []struct {
+		name     string
+		edgeType string
+		allowed  []KindPair
+		from, to string
+		want     *ValidationError
+	}{
+		{"allowed pair", "runs_on", runsOn, "application", "infrastructure", nil},
+		{"from kind starts no allowed pair", "calls", calls, "infrastructure", "application",
+			&ValidationError{Location: "body.from", Message: "edge type calls does not allow infrastructure → application"}},
+		{"to kind not allowed from an allowed from kind", "calls", calls, "application", "infrastructure",
+			&ValidationError{Location: "body.to", Message: "edge type calls does not allow application → infrastructure"}},
+		{"runs_on to a network", "runs_on", runsOn, "application", "network",
+			&ValidationError{Location: "body.to", Message: "edge type runs_on does not allow application → network"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, checkKindPair(tt.edgeType, tt.allowed, tt.from, tt.to))
+		})
+	}
 }

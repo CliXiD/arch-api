@@ -135,13 +135,18 @@ func attributeLocation(name string) string {
 	return "body.attributes." + name
 }
 
-// checkKindPair fails when the edge type does not allow the (from kind, to kind) pair.
+// checkKindPair fails when the edge type does not allow the (from kind, to kind) pair: at body.from
+// when no allowed pair starts at the from kind, otherwise at body.to.
 func checkKindPair(edgeType string, allowed []KindPair, fromKind, toKind string) *ValidationError {
 	if slices.Contains(allowed, KindPair{From: fromKind, To: toKind}) {
 		return nil
 	}
+	location := "body.from"
+	if slices.ContainsFunc(allowed, func(p KindPair) bool { return p.From == fromKind }) {
+		location = "body.to"
+	}
 	return &ValidationError{
-		Location: "body.to",
+		Location: location,
 		Message:  fmt.Sprintf("edge type %s does not allow %s → %s", edgeType, fromKind, toKind),
 	}
 }
