@@ -40,7 +40,7 @@ func (q *Queries) CountTeamNodes(ctx context.Context, owner string) (int64, erro
 
 const createEdge = `-- name: CreateEdge :one
 INSERT INTO edges (environment, type, from_id, to_id, attributes, source)
-VALUES ($1, $2, $3, $4, $5, 'ui')
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING uid, created_at, updated_at, version
 `
 
@@ -50,6 +50,7 @@ type CreateEdgeParams struct {
 	FromID      string
 	ToID        string
 	Attributes  []byte
+	Source      string
 }
 
 type CreateEdgeRow struct {
@@ -66,6 +67,7 @@ func (q *Queries) CreateEdge(ctx context.Context, arg CreateEdgeParams) (CreateE
 		arg.FromID,
 		arg.ToID,
 		arg.Attributes,
+		arg.Source,
 	)
 	var i CreateEdgeRow
 	err := row.Scan(
@@ -95,7 +97,7 @@ func (q *Queries) CreateEnvironment(ctx context.Context, arg CreateEnvironmentPa
 
 const createNode = `-- name: CreateNode :one
 INSERT INTO nodes (environment, id, type, name, description, owner, attributes, tags, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ui')
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING created_at, updated_at, version
 `
 
@@ -108,6 +110,7 @@ type CreateNodeParams struct {
 	Owner       string
 	Attributes  []byte
 	Tags        []string
+	Source      string
 }
 
 type CreateNodeRow struct {
@@ -126,6 +129,7 @@ func (q *Queries) CreateNode(ctx context.Context, arg CreateNodeParams) (CreateN
 		arg.Owner,
 		arg.Attributes,
 		arg.Tags,
+		arg.Source,
 	)
 	var i CreateNodeRow
 	err := row.Scan(&i.CreatedAt, &i.UpdatedAt, &i.Version)
@@ -433,7 +437,7 @@ func (q *Queries) TeamExists(ctx context.Context, id string) (bool, error) {
 
 const updateEdge = `-- name: UpdateEdge :one
 UPDATE edges
-SET attributes = $2, source = 'ui', version = version + 1, updated_at = now()
+SET attributes = $2, source = $3, version = version + 1, updated_at = now()
 WHERE uid = $1
 RETURNING updated_at, version
 `
@@ -441,6 +445,7 @@ RETURNING updated_at, version
 type UpdateEdgeParams struct {
 	Uid        uuid.UUID
 	Attributes []byte
+	Source     string
 }
 
 type UpdateEdgeRow struct {
@@ -449,7 +454,7 @@ type UpdateEdgeRow struct {
 }
 
 func (q *Queries) UpdateEdge(ctx context.Context, arg UpdateEdgeParams) (UpdateEdgeRow, error) {
-	row := q.db.QueryRow(ctx, updateEdge, arg.Uid, arg.Attributes)
+	row := q.db.QueryRow(ctx, updateEdge, arg.Uid, arg.Attributes, arg.Source)
 	var i UpdateEdgeRow
 	err := row.Scan(&i.UpdatedAt, &i.Version)
 	return i, err
@@ -475,7 +480,7 @@ func (q *Queries) UpdateEnvironment(ctx context.Context, arg UpdateEnvironmentPa
 const updateNode = `-- name: UpdateNode :one
 UPDATE nodes
 SET name = $3, description = $4, owner = $5, attributes = $6, tags = $7,
-    source = 'ui', version = version + 1, updated_at = now()
+    source = $8, version = version + 1, updated_at = now()
 WHERE environment = $1 AND id = $2
 RETURNING updated_at, version
 `
@@ -488,6 +493,7 @@ type UpdateNodeParams struct {
 	Owner       string
 	Attributes  []byte
 	Tags        []string
+	Source      string
 }
 
 type UpdateNodeRow struct {
@@ -504,6 +510,7 @@ func (q *Queries) UpdateNode(ctx context.Context, arg UpdateNodeParams) (UpdateN
 		arg.Owner,
 		arg.Attributes,
 		arg.Tags,
+		arg.Source,
 	)
 	var i UpdateNodeRow
 	err := row.Scan(&i.UpdatedAt, &i.Version)

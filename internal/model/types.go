@@ -67,7 +67,7 @@ type Node struct {
 	Owner       string         `json:"owner" doc:"Owning team id."`
 	Attributes  map[string]any `json:"attributes"`
 	Tags        []string       `json:"tags" nullable:"false"`
-	Source      string         `json:"source" enum:"ui,yaml,discovery,import"`
+	Source      string         `json:"source" enum:"ui,api,yaml,discovery,import"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	Version     int            `json:"version"`
@@ -81,7 +81,7 @@ type Edge struct {
 	From        string         `json:"from" doc:"Source node id."`
 	To          string         `json:"to" doc:"Target node id."`
 	Attributes  map[string]any `json:"attributes"`
-	Source      string         `json:"source" enum:"ui,yaml,discovery,import"`
+	Source      string         `json:"source" enum:"ui,api,yaml,discovery,import"`
 	CreatedAt   time.Time      `json:"created_at"`
 	UpdatedAt   time.Time      `json:"updated_at"`
 	Version     int            `json:"version"`
@@ -227,7 +227,7 @@ type Change struct {
 	Actor     string    `json:"actor" doc:"Subject of the token; for a service account, its client id."`
 	ActorName string    `json:"actor_name" doc:"Username; for a service account, its client id."`
 	ActorKind string    `json:"actor_kind" enum:"user,service"`
-	Source    string    `json:"source" enum:"ui,yaml,discovery,import"`
+	Source    string    `json:"source" enum:"ui,api,yaml,discovery,import"`
 	Entity    string    `json:"entity" enum:"node,edge,type,team,environment"`
 	EntityKey string    `json:"entity_key" doc:"Node <environment>/<id>, edge uid, team or environment id."`
 	Action    string    `json:"action" enum:"create,update,delete"`
