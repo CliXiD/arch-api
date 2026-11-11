@@ -133,7 +133,8 @@ Both servers use a 10 s read-header timeout, 30 s read and write timeouts and a 
 
 Every successful write runs in one transaction that also appends one `change_log` row per changed
 entity: who (`actor` = token subject, `actor_name` = username, `actor_kind` `user` or `service`;
-a service account is its client id), `source` (`ui`), `entity` (`node`, `edge`, `team`,
+a service account is its client id), `source` (`ui` for a user token, `api` for a service
+account; the node or edge written gets the same `source`), `entity` (`node`, `edge`, `team`,
 `environment`), `entity_key` (`<environment>/<id>`, the edge uid, or the id), `action` and the
 entity's JSON `before` and `after`. A rejected write leaves no row. A trigger rejects `UPDATE`,
 `DELETE` and `TRUNCATE` on `change_log` for every role, the owner included.
@@ -147,13 +148,15 @@ entity's JSON `before` and `after`. A rejected write leaves no row. A trigger re
   of the token's `teams` (an owner change needs both the old and the new team), and an edge only
   when it may write its `from` node. Otherwise `403` (`/problems/forbidden`), `detail`
   `node is owned by team <team>`. Deleting a node deletes every edge from or to it, whoever owns
-  the other end. Teams and environments are admin-only.
+  the other end. Teams and environments are admin-only. An `owner` that is not an existing team
+  gives `422` at `body.owner` (`team does not exist`) before any team-membership check.
 - **Patches.** Each field present replaces the stored value; `tags` and `attributes` are replaced
   whole. `id`, `type`, `environment`, `from` and `to` cannot change: `422` at `body.<field>`.
 - **Attributes** are checked against the type's `attributes_schema` (`type`, `enum`, `minimum`,
   `maximum`, `required`, `additionalProperties: false`). Undeclared attributes are allowed, but
   every value must be a string, number, boolean or array of strings. Edges also need both nodes in
-  their `environment` and a (from kind, to kind) pair their type allows (`422` at `body.to`).
+  their `environment` and a (from kind, to kind) pair their type allows: `422` at `body.from` when
+  the source node's kind starts no allowed pair of the type, otherwise at `body.to`.
 - **Secrets.** Attribute names holding `password`, `passwd`, `secret`, `api_key`, `private_key` or
   `credential` anywhere, or `token` as a whole word or the end of one (`access_token`, `apiToken`;
   not `max_tokens`), and string values holding a URL with a password (whatever characters the
