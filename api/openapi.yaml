@@ -1591,6 +1591,7 @@ components:
         source:
           enum:
           - ui
+          - api
           - yaml
           - discovery
           - import
@@ -1625,6 +1626,7 @@ components:
         source:
           enum:
           - ui
+          - api
           - yaml
           - discovery
           - import
@@ -2063,6 +2065,7 @@ components:
         source:
           enum:
           - ui
+          - api
           - yaml
           - discovery
           - import

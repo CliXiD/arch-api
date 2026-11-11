@@ -27,13 +27,13 @@ FOR UPDATE OF n;
 
 -- name: CreateNode :one
 INSERT INTO nodes (environment, id, type, name, description, owner, attributes, tags, source)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'ui')
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, sqlc.arg('source'))
 RETURNING created_at, updated_at, version;
 
 -- name: UpdateNode :one
 UPDATE nodes
 SET name = $3, description = $4, owner = $5, attributes = $6, tags = $7,
-    source = 'ui', version = version + 1, updated_at = now()
+    source = sqlc.arg('source'), version = version + 1, updated_at = now()
 WHERE environment = $1 AND id = $2
 RETURNING updated_at, version;
 
@@ -63,12 +63,12 @@ FOR UPDATE;
 
 -- name: CreateEdge :one
 INSERT INTO edges (environment, type, from_id, to_id, attributes, source)
-VALUES ($1, $2, $3, $4, $5, 'ui')
+VALUES ($1, $2, $3, $4, $5, sqlc.arg('source'))
 RETURNING uid, created_at, updated_at, version;
 
 -- name: UpdateEdge :one
 UPDATE edges
-SET attributes = $2, source = 'ui', version = version + 1, updated_at = now()
+SET attributes = $2, source = sqlc.arg('source'), version = version + 1, updated_at = now()
 WHERE uid = $1
 RETURNING updated_at, version;
 

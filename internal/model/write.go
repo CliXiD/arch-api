@@ -16,7 +16,8 @@ import (
 
 // The change_log values this package writes.
 const (
-	sourceUI = "ui"
+	sourceUI  = "ui"
+	sourceAPI = "api"
 
 	entityNode        = "node"
 	entityEdge        = "edge"
@@ -33,6 +34,14 @@ const (
 	sqlstateUniqueViolation     = "23505"
 	sqlstateForeignKeyViolation = "23503"
 )
+
+// source is the source of the actor's writes: `api` for a service account, `ui` otherwise.
+func (a Actor) source() string {
+	if a.Kind == "service" {
+		return sourceAPI
+	}
+	return sourceUI
+}
 
 // can fails with a ForbiddenError unless the actor is an admin or a member of team.
 func (a Actor) can(team string) error {
@@ -60,7 +69,7 @@ func (s *Service) inTx(ctx context.Context, fn func(q *dbq.Queries) error) error
 // nil is SQL NULL. Every row of one transaction has the same `at`.
 func record(ctx context.Context, q *dbq.Queries, a Actor, entity, key, action string, before, after any) error {
 	p := dbq.InsertChangeLogParams{
-		Actor: a.Subject, ActorName: a.Username, ActorKind: a.Kind, Source: sourceUI,
+		Actor: a.Subject, ActorName: a.Username, ActorKind: a.Kind, Source: a.source(),
 		Entity: entity, EntityKey: key, Action: action,
 	}
 	var err error
@@ -82,14 +91,18 @@ func jsonOrNull(v any) ([]byte, error) {
 
 func nodeKey(n Node) string { return n.Environment + "/" + n.ID }
 
-// CreateNode creates a node with source `ui` and version 1.
+// CreateNode creates a node with the actor's source and version 1. An owner that is not a team
+// fails on its own, before the actor's rights on it are checked.
 func (s *Service) CreateNode(ctx context.Context, a Actor, in NodeCreate) (Node, error) {
-	if err := a.can(in.Owner); err != nil {
-		return Node{}, err
-	}
 	attrs := attributesOrEmpty(in.Attributes)
 	var out Node
 	err := s.inTx(ctx, func(q *dbq.Queries) error {
+		if err := checkOwner(ctx, q, in.Owner); err != nil {
+			return err
+		}
+		if err := a.can(in.Owner); err != nil {
+			return err
+		}
 		var errs ValidationErrors
 		envOK, err := q.EnvironmentExists(ctx, in.Environment)
 		if err != nil {
@@ -97,13 +110,6 @@ func (s *Service) CreateNode(ctx context.Context, a Actor, in NodeCreate) (Node,
 		}
 		if !envOK {
 			errs = append(errs, &ValidationError{Location: "body.environment", Message: "unknown environment"})
-		}
-		teamOK, err := q.TeamExists(ctx, in.Owner)
-		if err != nil {
-			return err
-		}
-		if !teamOK {
-			errs = append(errs, &ValidationError{Location: "body.owner", Message: "unknown team"})
 		}
 		nt, err := q.GetNodeType(ctx, in.Type)
 		switch {
@@ -132,7 +138,7 @@ func (s *Service) CreateNode(ctx context.Context, a Actor, in NodeCreate) (Node,
 		tags := tags(in.Tags)
 		row, err := q.CreateNode(ctx, dbq.CreateNodeParams{
 			Environment: in.Environment, ID: in.ID, Type: in.Type, Name: in.Name, Description: in.Description,
-			Owner: in.Owner, Attributes: attrJSON, Tags: tags,
+			Owner: in.Owner, Attributes: attrJSON, Tags: tags, Source: a.source(),
 		})
 		if isSQLState(err, sqlstateUniqueViolation) {
 			return ErrConflict
@@ -142,7 +148,7 @@ func (s *Service) CreateNode(ctx context.Context, a Actor, in NodeCreate) (Node,
 		}
 		out = Node{
 			Environment: in.Environment, ID: in.ID, Kind: nt.Kind, Type: in.Type, Name: in.Name,
-			Description: in.Description, Owner: in.Owner, Attributes: attrs, Tags: tags, Source: sourceUI,
+			Description: in.Description, Owner: in.Owner, Attributes: attrs, Tags: tags, Source: a.source(),
 			CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(), Version: int(row.Version),
 		}
 		return record(ctx, q, a, entityNode, nodeKey(out), actionCreate, nil, out)
@@ -166,6 +172,9 @@ func (s *Service) UpdateNode(ctx context.Context, a Actor, environment, id strin
 			return err
 		}
 		if p.Owner != nil && *p.Owner != cur.Owner {
+			if err := checkOwner(ctx, q, *p.Owner); err != nil {
+				return err
+			}
 			if err := a.can(*p.Owner); err != nil {
 				return err
 			}
@@ -188,15 +197,6 @@ func (s *Service) UpdateNode(ctx context.Context, a Actor, environment, id strin
 			next.Tags = tags(*p.Tags)
 		}
 		var errs ValidationErrors
-		if p.Owner != nil && *p.Owner != cur.Owner {
-			ok, err := q.TeamExists(ctx, *p.Owner)
-			if err != nil {
-				return err
-			}
-			if !ok {
-				errs = append(errs, &ValidationError{Location: "body.owner", Message: "unknown team"})
-			}
-		}
 		if p.Attributes != nil {
 			next.Attributes = p.Attributes
 			nt, err := q.GetNodeType(ctx, cur.Type)
@@ -228,12 +228,12 @@ func (s *Service) UpdateNode(ctx context.Context, a Actor, environment, id strin
 		}
 		row, err := q.UpdateNode(ctx, dbq.UpdateNodeParams{
 			Environment: environment, ID: id, Name: next.Name, Description: next.Description, Owner: next.Owner,
-			Attributes: attrJSON, Tags: next.Tags,
+			Attributes: attrJSON, Tags: next.Tags, Source: a.source(),
 		})
 		if err != nil {
 			return err
 		}
-		next.Source, next.UpdatedAt, next.Version = sourceUI, row.UpdatedAt.UTC(), int(row.Version)
+		next.Source, next.UpdatedAt, next.Version = a.source(), row.UpdatedAt.UTC(), int(row.Version)
 		out = next
 		return record(ctx, q, a, entityNode, nodeKey(cur), actionUpdate, cur, next)
 	})
@@ -280,7 +280,7 @@ func (s *Service) DeleteNode(ctx context.Context, a Actor, environment, id strin
 	})
 }
 
-// CreateEdge creates an edge with source `ui` and version 1. The actor needs rights on the source
+// CreateEdge creates an edge with the actor's source and version 1. The actor needs rights on the source
 // node's owner; both nodes must be in the edge's environment and their kinds allowed by its type.
 func (s *Service) CreateEdge(ctx context.Context, a Actor, in EdgeCreate) (Edge, error) {
 	attrs := attributesOrEmpty(in.Attributes)
@@ -349,6 +349,7 @@ func (s *Service) CreateEdge(ctx context.Context, a Actor, in EdgeCreate) (Edge,
 		}
 		row, err := q.CreateEdge(ctx, dbq.CreateEdgeParams{
 			Environment: in.Environment, Type: in.Type, FromID: in.From, ToID: in.To, Attributes: attrJSON,
+			Source: a.source(),
 		})
 		if isSQLState(err, sqlstateUniqueViolation) {
 			return ErrConflict
@@ -361,7 +362,7 @@ func (s *Service) CreateEdge(ctx context.Context, a Actor, in EdgeCreate) (Edge,
 		}
 		out = Edge{
 			UID: row.Uid.String(), Environment: in.Environment, Type: in.Type, From: in.From, To: in.To,
-			Attributes: attrs, Source: sourceUI, CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(),
+			Attributes: attrs, Source: a.source(), CreatedAt: row.CreatedAt.UTC(), UpdatedAt: row.UpdatedAt.UTC(),
 			Version: int(row.Version),
 		}
 		return record(ctx, q, a, entityEdge, out.UID, actionCreate, nil, out)
@@ -407,11 +408,11 @@ func (s *Service) UpdateEdge(ctx context.Context, a Actor, uid string, version i
 		if err != nil {
 			return err
 		}
-		row, err := q.UpdateEdge(ctx, dbq.UpdateEdgeParams{Uid: uuid.MustParse(cur.UID), Attributes: attrJSON})
+		row, err := q.UpdateEdge(ctx, dbq.UpdateEdgeParams{Uid: uuid.MustParse(cur.UID), Attributes: attrJSON, Source: a.source()})
 		if err != nil {
 			return err
 		}
-		next.Source, next.UpdatedAt, next.Version = sourceUI, row.UpdatedAt.UTC(), int(row.Version)
+		next.Source, next.UpdatedAt, next.Version = a.source(), row.UpdatedAt.UTC(), int(row.Version)
 		out = next
 		return record(ctx, q, a, entityEdge, cur.UID, actionUpdate, cur, next)
 	})
@@ -615,6 +616,18 @@ func (s *Service) DeleteEnvironment(ctx context.Context, a Actor, id string) err
 		}
 		return record(ctx, q, a, entityEnvironment, id, actionDelete, Environment{ID: r.ID, Name: r.Name, Sort: int(r.Sort)}, nil)
 	})
+}
+
+// checkOwner fails with a body.owner validation error when owner is not a team.
+func checkOwner(ctx context.Context, q *dbq.Queries, owner string) error {
+	ok, err := q.TeamExists(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ValidationErrors{{Location: "body.owner", Message: "team does not exist"}}
+	}
+	return nil
 }
 
 func lockNode(ctx context.Context, q *dbq.Queries, environment, id string) (Node, error) {

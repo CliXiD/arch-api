@@ -147,7 +147,7 @@ func TestWriteIntegration(t *testing.T) {
 	t.Run("readiness as arch_app", func(t *testing.T) {
 		v, err := db.VersionReader{Pool: app}.AppliedVersion(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, int64(6), v)
+		assert.Equal(t, int64(7), v)
 	})
 
 	t.Run("teams and environments", func(t *testing.T) {
@@ -244,6 +244,10 @@ func TestWriteIntegration(t *testing.T) {
 				[]string{"body.attributes.port"}, "/problems/validation"},
 			{"kind pair not allowed", "/api/v1/edges", `{"environment":"prod","type":"runs_on","from":"payments-api","to":"vpc-prod"}`,
 				[]string{"body.to"}, "/problems/validation"},
+			{"from kind starts no allowed pair", "/api/v1/edges", `{"environment":"prod","type":"calls","from":"eks-prod","to":"payments-api"}`,
+				[]string{"body.from"}, "/problems/validation"},
+			{"to kind not allowed", "/api/v1/edges", `{"environment":"prod","type":"calls","from":"payments-api","to":"eks-prod"}`,
+				[]string{"body.to"}, "/problems/validation"},
 			{"to only in another environment", "/api/v1/edges", `{"environment":"prod","type":"calls","from":"payments-api","to":"dev-only"}`,
 				[]string{"body.to"}, "/problems/validation"},
 			{"secret value", "/api/v1/nodes",
@@ -262,6 +266,27 @@ func TestWriteIntegration(t *testing.T) {
 		editor.expect(t, http.StatusUnprocessableEntity, http.MethodPost, "/api/v1/edges", "",
 			`{"environment":"prod","type":"runs_on","from":"payments-api","to":"vpc-prod"}`, &p)
 		assert.Equal(t, "edge type runs_on does not allow application → network", p.Errors[0].Message)
+		editor.expect(t, http.StatusUnprocessableEntity, http.MethodPost, "/api/v1/edges", "",
+			`{"environment":"prod","type":"calls","from":"eks-prod","to":"payments-api"}`, &p)
+		assert.Equal(t, "edge type calls does not allow infrastructure → application", p.Errors[0].Message)
+
+		unknownOwner := func(t *testing.T, w writer, method, path, ifMatch, body string) {
+			t.Helper()
+			var p problemBody
+			w.expect(t, http.StatusUnprocessableEntity, method, path, ifMatch, body, &p)
+			assert.Equal(t, "/problems/validation", p.Type)
+			assert.Equal(t, []string{"body.owner"}, p.locations())
+			assert.Equal(t, "team does not exist", p.Errors[0].Message)
+		}
+		for name, w := range map[string]writer{"editor": editor, "admin": admin} {
+			t.Run("unknown owner as "+name, func(t *testing.T) {
+				unknownOwner(t, w, http.MethodPost, "/api/v1/nodes", "",
+					`{"environment":"prod","id":"x9","type":"service","name":"x","owner":"no-such-team"}`)
+			})
+		}
+		t.Run("owner changed to an unknown team", func(t *testing.T) {
+			unknownOwner(t, editor, http.MethodPatch, "/api/v1/nodes/prod/eks-prod", `"1"`, `{"owner":"no-such-team"}`)
+		})
 		assert.Equal(t, before, changeCount(t, owner), "no change_log row for a rejected write")
 		var n int
 		require.NoError(t, owner.QueryRow(ctx, "SELECT count(*) FROM nodes WHERE id LIKE 'x%'").Scan(&n))
@@ -394,6 +419,32 @@ func TestWriteIntegration(t *testing.T) {
 		assert.Equal(t, "service", rows[0].ActorKind)
 		assert.Equal(t, "arch-ci-platform", rows[0].Actor)
 		assert.Equal(t, "arch-ci-platform", rows[0].ActorName)
+		assert.Equal(t, "api", rows[0].Source)
+
+		var n model.Node
+		service.expect(t, http.StatusCreated, http.MethodPost, "/api/v1/nodes", "",
+			`{"environment":"prod","id":"ci-built","type":"service","name":"CI built","owner":"platform"}`, &n)
+		assert.Equal(t, "api", n.Source)
+		var page model.HistoryPage
+		viewer.expect(t, http.StatusOK, http.MethodGet, "/api/v1/history?entity=node&environment=prod&id=ci-built", "", "", &page)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, "create", page.Items[0].Action)
+		assert.Equal(t, "api", page.Items[0].Source)
+		assert.Equal(t, "service", page.Items[0].ActorKind)
+
+		var e model.Edge
+		service.expect(t, http.StatusCreated, http.MethodPost, "/api/v1/edges", "",
+			`{"environment":"prod","type":"calls","from":"ci-built","to":"ledger"}`, &e)
+		assert.Equal(t, "api", e.Source)
+
+		// Remove the node and its edge again, so the later counts hold.
+		before = lastChangeID(t, owner)
+		service.expect(t, http.StatusNoContent, http.MethodDelete, "/api/v1/nodes/prod/ci-built", `"1"`, "", nil)
+		rows = changesSince(t, owner, before)
+		require.Len(t, rows, 2)
+		for _, r := range rows {
+			assert.Equal(t, "api", r.Source, "%s %s", r.Entity, r.Action)
+		}
 	})
 
 	t.Run("delete an edge", func(t *testing.T) {
@@ -407,7 +458,11 @@ func TestWriteIntegration(t *testing.T) {
 		var got []string
 		for _, c := range page.Items {
 			got = append(got, c.Entity+" "+c.Action+" "+c.ActorName)
-			assert.Equal(t, "ui", c.Source)
+			want := "ui"
+			if c.ActorName == "arch-ci-platform" {
+				want = "api"
+			}
+			assert.Equal(t, want, c.Source, "%s %s %s", c.Entity, c.Action, c.ActorName)
 		}
 		assert.Equal(t, []string{
 			"edge delete editor", // runs_on
