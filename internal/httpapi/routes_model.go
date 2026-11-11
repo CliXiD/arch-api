@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -234,6 +235,25 @@ var conflictDetail = map[string]string{
 	"edge":        "an edge of this type between these nodes already exists",
 	"team":        "a team with this id already exists",
 	"environment": "an environment with this id or sort already exists",
+	"node type":   "a node type with this id already exists",
+	"edge type":   "an edge type with this id already exists",
+}
+
+// usedBy names what still uses an entity, or would fail its change: edges for an edge type, nodes
+// for everything else.
+func usedBy(entity string) string {
+	if entity == "edge type" {
+		return "edges"
+	}
+	return "nodes"
+}
+
+// builtinDetail is the 409 detail of a write a built-in type refuses.
+func builtinDetail(op string) string {
+	if strings.HasPrefix(op, "delete-") {
+		return "built-in types can't be deleted"
+	}
+	return "built-in types can't lose attributes"
 }
 
 // entityFailure maps a model error to a problem: 404 (naming entity), 403, 409, 412, 422, or a
@@ -246,6 +266,7 @@ func entityFailure(logger *slog.Logger) func(ctx context.Context, op, entity str
 			vs     model.ValidationErrors
 			forbid *model.ForbiddenError
 			inUse  *model.InUseError
+			incomp *model.IncompatibleError
 			secret *model.SecretError
 		)
 		switch {
@@ -257,13 +278,23 @@ func entityFailure(logger *slog.Logger) func(ctx context.Context, op, entity str
 			return problemOf(http.StatusPreconditionFailed, ProblemStale, "If-Match is not the current version")
 		case errors.As(err, &forbid):
 			return problemOf(http.StatusForbidden, ProblemForbidden, forbid.Error())
+		case errors.Is(err, model.ErrBuiltin):
+			return problemOf(http.StatusConflict, ProblemConflict, builtinDetail(op))
 		case errors.As(err, &inUse):
 			return &InUseProblem{
 				ErrorModel: huma.ErrorModel{
 					Type: ProblemInUse, Title: http.StatusText(http.StatusConflict), Status: http.StatusConflict,
-					Detail: entity + " is still used by nodes",
+					Detail: entity + " is still used by " + usedBy(entity),
 				},
 				Count: inUse.Count,
+			}
+		case errors.As(err, &incomp):
+			return &InUseProblem{
+				ErrorModel: huma.ErrorModel{
+					Type: ProblemConflict, Title: http.StatusText(http.StatusConflict), Status: http.StatusConflict,
+					Detail: "existing " + usedBy(entity) + " would fail the change",
+				},
+				Count: incomp.Count,
 			}
 		case errors.As(err, &secret):
 			details := make([]error, 0, len(secret.Locations))

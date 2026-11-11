@@ -220,6 +220,37 @@ type EnvironmentPatch struct {
 	Sort *int32  `json:"sort,omitempty" nullable:"false" doc:"Display order; unique."`
 }
 
+// NodeTypeCreate is the body of POST /admin/types/node-types. The type is never built-in.
+type NodeTypeCreate struct {
+	ID               string         `json:"id" pattern:"^[a-z0-9][a-z0-9-]{1,62}$"`
+	Kind             string         `json:"kind" enum:"application,infrastructure,network,external,team" doc:"Fixed once created."`
+	Name             string         `json:"name" minLength:"1"`
+	AttributesSchema map[string]any `json:"attributes_schema" doc:"JSON Schema of the node attributes, in the documented subset."`
+}
+
+// NodeTypePatch is the body of PATCH /admin/types/node-types/{id}. Each present field replaces the
+// stored value whole; absent fields are kept.
+type NodeTypePatch struct {
+	Name             *string        `json:"name,omitempty" minLength:"1" nullable:"false"`
+	AttributesSchema map[string]any `json:"attributes_schema,omitempty" doc:"Replaces the schema; every existing node of the type must still pass it."`
+}
+
+// EdgeTypeCreate is the body of POST /admin/types/edge-types. The type is never built-in.
+type EdgeTypeCreate struct {
+	ID               string         `json:"id" pattern:"^[a-z][a-z0-9_]{1,62}$"`
+	Name             string         `json:"name" minLength:"1"`
+	AttributesSchema map[string]any `json:"attributes_schema" doc:"JSON Schema of the edge attributes, in the documented subset."`
+	Allowed          []KindPair     `json:"allowed" minItems:"1" uniqueItems:"true" nullable:"false" doc:"Allowed (from kind, to kind) pairs."`
+}
+
+// EdgeTypePatch is the body of PATCH /admin/types/edge-types/{id}. Each present field replaces the
+// stored value whole; absent fields are kept.
+type EdgeTypePatch struct {
+	Name             *string        `json:"name,omitempty" minLength:"1" nullable:"false"`
+	AttributesSchema map[string]any `json:"attributes_schema,omitempty" doc:"Replaces the schema; every existing edge of the type must still pass it."`
+	Allowed          *[]KindPair    `json:"allowed,omitempty" minItems:"1" uniqueItems:"true" nullable:"false" doc:"Replaces the pairs; every existing edge of the type must still use one of them."`
+}
+
 // Change is one change_log row: a created, updated or deleted entity.
 type Change struct {
 	ID        int64     `json:"id"`
@@ -229,7 +260,7 @@ type Change struct {
 	ActorKind string    `json:"actor_kind" enum:"user,service"`
 	Source    string    `json:"source" enum:"ui,api,yaml,discovery,import"`
 	Entity    string    `json:"entity" enum:"node,edge,type,team,environment"`
-	EntityKey string    `json:"entity_key" doc:"Node <environment>/<id>, edge uid, team or environment id."`
+	EntityKey string    `json:"entity_key" doc:"Node <environment>/<id>, edge uid, type node/<id> or edge/<id>, team or environment id."`
 	Action    string    `json:"action" enum:"create,update,delete"`
 	// Before is the entity's API JSON before the change; null on create.
 	Before map[string]any `json:"before" nullable:"true" doc:"The entity before the change; null on create."`

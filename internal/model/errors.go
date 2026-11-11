@@ -6,14 +6,17 @@ import (
 	"strings"
 )
 
-// ErrNotFound means the requested node, edge, team or environment does not exist.
+// ErrNotFound means the requested node, edge, type, team or environment does not exist.
 var ErrNotFound = errors.New("not found")
 
 // ErrNotEmpty means `seed --sample` found nodes and wrote nothing.
 var ErrNotEmpty = errors.New("the database already has nodes")
 
-// ErrConflict means a node, edge, team or environment with the same key already exists.
+// ErrConflict means a node, edge, type, team or environment with the same key already exists.
 var ErrConflict = errors.New("already exists")
+
+// ErrBuiltin means a built-in type would be deleted or lose an attribute: nothing was changed.
+var ErrBuiltin = errors.New("built-in type")
 
 // ErrStale means the If-Match version is not the entity's current version.
 var ErrStale = errors.New("version is not current")
@@ -46,13 +49,23 @@ type ForbiddenError struct {
 
 func (e *ForbiddenError) Error() string { return "node is owned by team " + e.Team }
 
-// InUseError means a team still owns nodes, or an environment still holds nodes: nothing was
-// deleted.
+// InUseError means a team still owns nodes, an environment still holds nodes, or nodes or edges
+// still use a type: nothing was deleted.
 type InUseError struct {
 	Count int
 }
 
-func (e *InUseError) Error() string { return "in use by " + strconv.Itoa(e.Count) + " nodes" }
+func (e *InUseError) Error() string { return "in use by " + strconv.Itoa(e.Count) + " nodes or edges" }
+
+// IncompatibleError means a type change would make Count existing nodes or edges of the type fail
+// its schema or allowed pairs: nothing was changed.
+type IncompatibleError struct {
+	Count int
+}
+
+func (e *IncompatibleError) Error() string {
+	return "would fail " + strconv.Itoa(e.Count) + " existing nodes or edges"
+}
 
 // SecretError means attributes look like secrets. It holds the locations only, never a value.
 type SecretError struct {

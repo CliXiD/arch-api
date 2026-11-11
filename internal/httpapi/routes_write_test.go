@@ -138,6 +138,30 @@ func (f *fakeWriter) DeleteEnvironment(_ context.Context, a model.Actor, _ strin
 	return f.call(a, 0)
 }
 
+func (f *fakeWriter) CreateNodeType(_ context.Context, a model.Actor, in model.NodeTypeCreate) (model.NodeType, error) {
+	return model.NodeType{ID: in.ID, Kind: in.Kind, Name: in.Name, AttributesSchema: in.AttributesSchema}, f.call(a, 0)
+}
+
+func (f *fakeWriter) UpdateNodeType(_ context.Context, a model.Actor, id string, _ model.NodeTypePatch) (model.NodeType, error) {
+	return model.NodeType{ID: id, Kind: "infrastructure", Name: "Message broker", AttributesSchema: map[string]any{}}, f.call(a, 0)
+}
+
+func (f *fakeWriter) DeleteNodeType(_ context.Context, a model.Actor, _ string) error {
+	return f.call(a, 0)
+}
+
+func (f *fakeWriter) CreateEdgeType(_ context.Context, a model.Actor, in model.EdgeTypeCreate) (model.EdgeType, error) {
+	return model.EdgeType{ID: in.ID, Name: in.Name, AttributesSchema: in.AttributesSchema, Allowed: in.Allowed}, f.call(a, 0)
+}
+
+func (f *fakeWriter) UpdateEdgeType(_ context.Context, a model.Actor, id string, _ model.EdgeTypePatch) (model.EdgeType, error) {
+	return model.EdgeType{ID: id, Name: "Publishes to", AttributesSchema: map[string]any{}, Allowed: []model.KindPair{}}, f.call(a, 0)
+}
+
+func (f *fakeWriter) DeleteEdgeType(_ context.Context, a model.Actor, _ string) error {
+	return f.call(a, 0)
+}
+
 func writeServer(t *testing.T, w *fakeWriter) *testServer {
 	t.Helper()
 	return newTestServer(t, func(d *httpapi.Deps) { d.Writer = w; d.Model = &fakeModel{} })
@@ -172,6 +196,14 @@ func editorToken(t *testing.T, s *testServer) http.Header {
 }
 
 const nodeBody = `{"environment":"prod","id":"payments-api","type":"service","name":"Payments","owner":"platform"}`
+
+const (
+	nodeTypeBody = `{"id":"message-broker","kind":"infrastructure","name":"Message broker","attributes_schema":{"type":"object","properties":{}}}`
+	edgeTypeBody = `{"id":"publishes_to","name":"Publishes to","attributes_schema":{"type":"object","properties":{}},` +
+		`"allowed":[{"from":"application","to":"infrastructure"}]}`
+	nodeTypePath = "/api/v1/admin/types/node-types"
+	edgeTypePath = "/api/v1/admin/types/edge-types"
+)
 
 func TestWriteRoles(t *testing.T) {
 	w := &fakeWriter{}
@@ -211,6 +243,24 @@ func TestWriteRoles(t *testing.T) {
 		{"admin creates an environment", http.MethodPost, "/api/v1/environments", admin, `{"id":"sandbox","name":"Sandbox","sort":4}`, http.StatusCreated, ""},
 		{"admin updates an environment", http.MethodPatch, "/api/v1/environments/sandbox", admin, `{"sort":4}`, http.StatusOK, ""},
 		{"admin deletes an environment", http.MethodDelete, "/api/v1/environments/sandbox", admin, "", http.StatusNoContent, ""},
+		{"viewer creates a node type", http.MethodPost, nodeTypePath, viewer, nodeTypeBody, http.StatusForbidden, "requires role admin"},
+		{"viewer updates a node type", http.MethodPatch, nodeTypePath + "/message-broker", viewer, `{"name":"Broker"}`, http.StatusForbidden, "requires role admin"},
+		{"viewer deletes a node type", http.MethodDelete, nodeTypePath + "/message-broker", viewer, "", http.StatusForbidden, "requires role admin"},
+		{"viewer creates an edge type", http.MethodPost, edgeTypePath, viewer, edgeTypeBody, http.StatusForbidden, "requires role admin"},
+		{"viewer updates an edge type", http.MethodPatch, edgeTypePath + "/publishes_to", viewer, `{"name":"Publishes"}`, http.StatusForbidden, "requires role admin"},
+		{"viewer deletes an edge type", http.MethodDelete, edgeTypePath + "/publishes_to", viewer, "", http.StatusForbidden, "requires role admin"},
+		{"editor creates a node type", http.MethodPost, nodeTypePath, editor, nodeTypeBody, http.StatusForbidden, "requires role admin"},
+		{"editor updates a node type", http.MethodPatch, nodeTypePath + "/message-broker", editor, `{"name":"Broker"}`, http.StatusForbidden, "requires role admin"},
+		{"editor deletes a node type", http.MethodDelete, nodeTypePath + "/message-broker", editor, "", http.StatusForbidden, "requires role admin"},
+		{"editor creates an edge type", http.MethodPost, edgeTypePath, editor, edgeTypeBody, http.StatusForbidden, "requires role admin"},
+		{"editor updates an edge type", http.MethodPatch, edgeTypePath + "/publishes_to", editor, `{"name":"Publishes"}`, http.StatusForbidden, "requires role admin"},
+		{"editor deletes an edge type", http.MethodDelete, edgeTypePath + "/publishes_to", editor, "", http.StatusForbidden, "requires role admin"},
+		{"admin creates a node type", http.MethodPost, nodeTypePath, admin, nodeTypeBody, http.StatusCreated, ""},
+		{"admin updates a node type", http.MethodPatch, nodeTypePath + "/message-broker", admin, `{"name":"Broker"}`, http.StatusOK, ""},
+		{"admin deletes a node type", http.MethodDelete, nodeTypePath + "/message-broker", admin, "", http.StatusNoContent, ""},
+		{"admin creates an edge type", http.MethodPost, edgeTypePath, admin, edgeTypeBody, http.StatusCreated, ""},
+		{"admin updates an edge type", http.MethodPatch, edgeTypePath + "/publishes_to", admin, `{"name":"Publishes"}`, http.StatusOK, ""},
+		{"admin deletes an edge type", http.MethodDelete, edgeTypePath + "/publishes_to", admin, "", http.StatusNoContent, ""},
 		{"viewer reads history", http.MethodGet, "/api/v1/history?entity=node&environment=prod&id=payments-api", viewer, "", http.StatusOK, ""},
 	}
 	for _, tt := range tests {
@@ -370,6 +420,28 @@ func TestWriteRequestValidation(t *testing.T) {
 		{"bad edge uid", http.MethodDelete, "/api/v1/edges/not-a-uuid", v1, "", "path.uid"},
 		{"bad team id", http.MethodPost, "/api/v1/teams", admin, `{"id":"Core Team","name":"Core"}`, "body.id"},
 		{"environment without sort", http.MethodPost, "/api/v1/environments", admin, `{"id":"sandbox","name":"Sandbox"}`, "body"},
+		{"bad node type id", http.MethodPost, nodeTypePath, admin,
+			`{"id":"Message_Broker","kind":"infrastructure","name":"x","attributes_schema":{"type":"object","properties":{}}}`, "body.id"},
+		{"unknown node type kind", http.MethodPost, nodeTypePath, admin,
+			`{"id":"message-broker","kind":"planet","name":"x","attributes_schema":{"type":"object","properties":{}}}`, "body.kind"},
+		{"empty node type name", http.MethodPost, nodeTypePath, admin,
+			`{"id":"message-broker","kind":"infrastructure","name":"","attributes_schema":{"type":"object","properties":{}}}`, "body.name"},
+		{"node type without schema", http.MethodPost, nodeTypePath, admin,
+			`{"id":"message-broker","kind":"infrastructure","name":"x"}`, "body"},
+		{"patch node type id", http.MethodPatch, nodeTypePath + "/message-broker", admin, `{"id":"other"}`, "body.id"},
+		{"patch node type kind", http.MethodPatch, nodeTypePath + "/message-broker", admin, `{"kind":"network"}`, "body.kind"},
+		{"bad edge type id", http.MethodPost, edgeTypePath, admin,
+			`{"id":"publishes-to","name":"x","attributes_schema":{"type":"object","properties":{}},"allowed":[{"from":"application","to":"network"}]}`, "body.id"},
+		{"empty allowed", http.MethodPost, edgeTypePath, admin,
+			`{"id":"publishes_to","name":"x","attributes_schema":{"type":"object","properties":{}},"allowed":[]}`, "body.allowed"},
+		{"duplicate allowed", http.MethodPost, edgeTypePath, admin,
+			`{"id":"publishes_to","name":"x","attributes_schema":{"type":"object","properties":{}},` +
+				`"allowed":[{"from":"application","to":"network"},{"from":"application","to":"network"}]}`, "body.allowed"},
+		{"unknown allowed kind", http.MethodPost, edgeTypePath, admin,
+			`{"id":"publishes_to","name":"x","attributes_schema":{"type":"object","properties":{}},"allowed":[{"from":"planet","to":"network"}]}`,
+			"body.allowed[0].from"},
+		{"patch edge type with empty allowed", http.MethodPatch, edgeTypePath + "/publishes_to", admin, `{"allowed":[]}`, "body.allowed"},
+		{"patch edge type id", http.MethodPatch, edgeTypePath + "/publishes_to", admin, `{"id":"other"}`, "body.id"},
 		{"history without entity", http.MethodGet, "/api/v1/history?environment=prod&id=payments-api", editor, "", "query.entity"},
 		{"history of an edge", http.MethodGet, "/api/v1/history?entity=edge&environment=prod&id=payments-api", editor, "", "query.entity"},
 		{"history without id", http.MethodGet, "/api/v1/history?entity=node&environment=prod", editor, "", "query.id"},
@@ -444,6 +516,76 @@ func TestWriteProblems(t *testing.T) {
 			assert.Equal(t, problem{Type: tt.wantType, Title: http.StatusText(tt.wantStatus), Status: tt.wantStatus, Detail: tt.wantDetail}, p)
 		})
 	}
+}
+
+func TestTypeProblems(t *testing.T) {
+	count := func(n int) *int { return &n }
+	tests := []struct {
+		name       string
+		err        error
+		method     string
+		path       string
+		body       string
+		wantType   string
+		wantDetail string
+		wantCount  *int
+		wantStatus int
+	}{
+		{"node type not found", model.ErrNotFound, http.MethodPatch, nodeTypePath + "/nope", `{"name":"x"}`,
+			"/problems/not-found", "node type not found", nil, http.StatusNotFound},
+		{"edge type not found", model.ErrNotFound, http.MethodDelete, edgeTypePath + "/nope", "",
+			"/problems/not-found", "edge type not found", nil, http.StatusNotFound},
+		{"duplicate node type", model.ErrConflict, http.MethodPost, nodeTypePath, nodeTypeBody,
+			"/problems/conflict", "a node type with this id already exists", nil, http.StatusConflict},
+		{"duplicate edge type", model.ErrConflict, http.MethodPost, edgeTypePath, edgeTypeBody,
+			"/problems/conflict", "an edge type with this id already exists", nil, http.StatusConflict},
+		{"delete a built-in node type", model.ErrBuiltin, http.MethodDelete, nodeTypePath + "/service", "",
+			"/problems/conflict", "built-in types can't be deleted", nil, http.StatusConflict},
+		{"delete a built-in edge type", model.ErrBuiltin, http.MethodDelete, edgeTypePath + "/calls", "",
+			"/problems/conflict", "built-in types can't be deleted", nil, http.StatusConflict},
+		{"built-in node type loses an attribute", model.ErrBuiltin, http.MethodPatch, nodeTypePath + "/service",
+			`{"attributes_schema":{"type":"object","properties":{}}}`, "/problems/conflict", "built-in types can't lose attributes", nil, http.StatusConflict},
+		{"built-in edge type loses an attribute", model.ErrBuiltin, http.MethodPatch, edgeTypePath + "/calls",
+			`{"attributes_schema":{"type":"object","properties":{}}}`, "/problems/conflict", "built-in types can't lose attributes", nil, http.StatusConflict},
+		{"nodes would fail", &model.IncompatibleError{Count: 3}, http.MethodPatch, nodeTypePath + "/message-broker",
+			`{"attributes_schema":{"type":"object","properties":{}}}`, "/problems/conflict", "existing nodes would fail the change", count(3), http.StatusConflict},
+		{"edges would fail", &model.IncompatibleError{Count: 2}, http.MethodPatch, edgeTypePath + "/publishes_to",
+			`{"allowed":[{"from":"application","to":"network"}]}`, "/problems/conflict", "existing edges would fail the change", count(2), http.StatusConflict},
+		{"node type in use", &model.InUseError{Count: 4}, http.MethodDelete, nodeTypePath + "/message-broker", "",
+			"/problems/in-use", "node type is still used by nodes", count(4), http.StatusConflict},
+		{"edge type in use", &model.InUseError{Count: 5}, http.MethodDelete, edgeTypePath + "/publishes_to", "",
+			"/problems/in-use", "edge type is still used by edges", count(5), http.StatusConflict},
+		{"team in use", &model.InUseError{Count: 6}, http.MethodDelete, "/api/v1/teams/platform", "",
+			"/problems/in-use", "team is still used by nodes", count(6), http.StatusConflict},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := writeServer(t, &fakeWriter{err: tt.err})
+			rec := s.send(t, tt.method, tt.path, bearer(s.token(t, nil, "admin")), tt.body)
+			require.Equal(t, tt.wantStatus, rec.Code, rec.Body.String())
+			assert.Equal(t, "application/problem+json", rec.Header().Get("Content-Type"))
+			var p struct {
+				problem
+				Count *int `json:"count"`
+			}
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+			assert.Equal(t, problem{Type: tt.wantType, Title: http.StatusText(tt.wantStatus), Status: tt.wantStatus, Detail: tt.wantDetail}, p.problem)
+			assert.Equal(t, tt.wantCount, p.Count)
+		})
+	}
+}
+
+func TestTypeSecretProblem(t *testing.T) {
+	s := writeServer(t, &fakeWriter{err: &model.SecretError{Locations: []string{"body.attributes_schema.properties.api_key"}}})
+	body := `{"id":"message-broker","kind":"infrastructure","name":"Message broker","attributes_schema":{"type":"object",` +
+		`"properties":{"api_key":{"type":"string","enum":["Zq7xWv9Lm2Kp"]}}}}`
+	rec := s.send(t, http.MethodPost, nodeTypePath, bearer(s.token(t, nil, "admin")), body)
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code, rec.Body.String())
+	var p validationProblem
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &p))
+	assert.Equal(t, "/problems/secret-detected", p.Type)
+	assert.Equal(t, []map[string]any{{"location": "body.attributes_schema.properties.api_key", "message": "looks like a secret"}}, p.Errors)
+	assert.NotContains(t, rec.Body.String(), "Zq7xWv9Lm2Kp")
 }
 
 func TestInUse(t *testing.T) {
@@ -586,6 +728,9 @@ func TestWriteRoutesNeedAToken(t *testing.T) {
 		{http.MethodPost, "/api/v1/teams"}, {http.MethodPatch, "/api/v1/teams/core"}, {http.MethodDelete, "/api/v1/teams/core"},
 		{http.MethodPost, "/api/v1/environments"}, {http.MethodPatch, "/api/v1/environments/dev"},
 		{http.MethodDelete, "/api/v1/environments/dev"}, {http.MethodGet, "/api/v1/history?entity=node&environment=prod&id=a"},
+		{http.MethodPost, nodeTypePath}, {http.MethodPatch, nodeTypePath + "/message-broker"},
+		{http.MethodDelete, nodeTypePath + "/message-broker"}, {http.MethodPost, edgeTypePath},
+		{http.MethodPatch, edgeTypePath + "/publishes_to"}, {http.MethodDelete, edgeTypePath + "/publishes_to"},
 	} {
 		t.Run(r[0]+" "+r[1], func(t *testing.T) {
 			rec := s.send(t, r[0], r[1], nil, "")

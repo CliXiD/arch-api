@@ -167,11 +167,12 @@ func problemOf(status int, problemType, detail string, errs ...error) huma.Statu
 	return p
 }
 
-// InUseProblem is the 409 `/problems/in-use` problem: Huma's error model plus the number of nodes
-// that still use the team or environment.
+// InUseProblem is a 409 problem with a count: `/problems/in-use` with the number of nodes or edges
+// that still use the team, environment or type, or `/problems/conflict` with the number of nodes or
+// edges a type change would make fail.
 type InUseProblem struct {
 	huma.ErrorModel
-	Count int `json:"count" doc:"Number of nodes owned by the team, or held by the environment."`
+	Count int `json:"count" doc:"Number of nodes or edges that still use the entity, or that the change would make fail."`
 }
 
 // writeProblem writes an RFC 9457 problem. detail is fixed text: never a token, claim or header.

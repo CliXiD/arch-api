@@ -27,6 +27,12 @@ type Writer interface {
 	CreateEnvironment(ctx context.Context, a model.Actor, in model.EnvironmentCreate) (model.Environment, error)
 	UpdateEnvironment(ctx context.Context, a model.Actor, id string, p model.EnvironmentPatch) (model.Environment, error)
 	DeleteEnvironment(ctx context.Context, a model.Actor, id string) error
+	CreateNodeType(ctx context.Context, a model.Actor, in model.NodeTypeCreate) (model.NodeType, error)
+	UpdateNodeType(ctx context.Context, a model.Actor, id string, p model.NodeTypePatch) (model.NodeType, error)
+	DeleteNodeType(ctx context.Context, a model.Actor, id string) error
+	CreateEdgeType(ctx context.Context, a model.Actor, in model.EdgeTypeCreate) (model.EdgeType, error)
+	UpdateEdgeType(ctx context.Context, a model.Actor, id string, p model.EdgeTypePatch) (model.EdgeType, error)
+	DeleteEdgeType(ctx context.Context, a model.Actor, id string) error
 }
 
 type createNodeInput struct {
