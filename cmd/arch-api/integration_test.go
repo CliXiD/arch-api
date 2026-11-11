@@ -66,12 +66,26 @@ func (c client) json(t *testing.T, path string, out any) {
 func startPostgres(t *testing.T) (owner, app string) {
 	t.Helper()
 	ctx := context.Background()
+	owner = startEmptyPostgres(t)
+	require.NoError(t, db.Migrate(ctx, owner, "up", io.Discard))
+
+	u, err := url.Parse(owner)
+	require.NoError(t, err)
+	u.User = url.UserPassword("arch_app", "arch_app")
+	return owner, u.String()
+}
+
+// startEmptyPostgres starts PostgreSQL 16 with the owner `arch` and the runtime role `arch_app`,
+// runs no migrations, and returns the owner's connection string.
+func startEmptyPostgres(t *testing.T) string {
+	t.Helper()
+	ctx := context.Background()
 	pg, err := postgres.Run(ctx, "postgres:16",
 		postgres.WithDatabase("arch"), postgres.WithUsername("arch"), postgres.WithPassword("arch"),
 		postgres.BasicWaitStrategies())
 	testcontainers.CleanupContainer(t, pg)
 	require.NoError(t, err)
-	owner, err = pg.ConnectionString(ctx, "sslmode=disable")
+	owner, err := pg.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
 	conn, err := pgx.Connect(ctx, owner)
@@ -79,13 +93,7 @@ func startPostgres(t *testing.T) (owner, app string) {
 	_, err = conn.Exec(ctx, "CREATE ROLE arch_app LOGIN PASSWORD 'arch_app'")
 	require.NoError(t, err)
 	require.NoError(t, conn.Close(ctx))
-
-	require.NoError(t, db.Migrate(ctx, owner, "up", io.Discard))
-
-	u, err := url.Parse(owner)
-	require.NoError(t, err)
-	u.User = url.UserPassword("arch_app", "arch_app")
-	return owner, u.String()
+	return owner
 }
 
 // newPool returns a pool for dsn, closed when the test ends.
@@ -142,6 +150,7 @@ func TestModelIntegration(t *testing.T) {
 			"queue": "infrastructure", "bucket": "infrastructure", "vpc": "network", "landing-zone": "network",
 			"transit-gateway": "network", "vpn": "network", "direct-connect": "network", "firewall": "network",
 			"on-prem-system": "external", "saas": "external", "team": "team",
+			"client": "external", "load-balancer": "network", "container-registry": "infrastructure", "job": "application",
 		}, nodeTypes)
 
 		pair := func(from, to string) model.KindPair { return model.KindPair{From: from, To: to} }
@@ -153,8 +162,9 @@ func TestModelIntegration(t *testing.T) {
 			schemas[et.ID] = et.AttributesSchema
 		}
 		assert.Equal(t, map[string][]model.KindPair{
-			"depends_on":     {pair("application", "application"), pair("application", "infrastructure"), pair("application", "external")},
-			"calls":          {pair("application", "application"), pair("application", "external")},
+			"depends_on": {pair("application", "application"), pair("application", "infrastructure"), pair("application", "external"),
+				pair("external", "application")},
+			"calls":          {pair("application", "application"), pair("application", "external"), pair("external", "application")},
 			"runs_on":        {pair("application", "infrastructure")},
 			"stores_data_in": {pair("application", "infrastructure")},
 			"routes_via": {pair("application", "network"), pair("network", "network"), pair("network", "application"),
@@ -164,9 +174,13 @@ func TestModelIntegration(t *testing.T) {
 		}, allowed)
 		var calls any
 		require.NoError(t, json.Unmarshal([]byte(`{"type":"object","properties":{
-			"protocol":{"type":"string","enum":["http","https","grpc","tcp","amqp","kafka","other"]},
-			"port":{"type":"number","minimum":1,"maximum":65535}}}`), &calls))
+			"protocol":{"type":"string","enum":["http","https","grpc","tcp","amqp","kafka","postgres","otlp","other"]},
+			"port":{"type":"number","minimum":1,"maximum":65535},"path":{"type":"string"}}}`), &calls))
 		assert.Equal(t, calls, any(schemas["calls"]))
+		var storesDataIn any
+		require.NoError(t, json.Unmarshal([]byte(`{"type":"object","properties":{
+			"port":{"type":"number","minimum":1,"maximum":65535},"role":{"type":"string"}}}`), &storesDataIn))
+		assert.Equal(t, storesDataIn, any(schemas["stores_data_in"]))
 		assert.Equal(t, map[string]any{"type": "object", "properties": map[string]any{}}, schemas["runs_on"])
 
 		var envs model.EnvironmentList

@@ -147,7 +147,7 @@ func TestWriteIntegration(t *testing.T) {
 	t.Run("readiness as arch_app", func(t *testing.T) {
 		v, err := db.VersionReader{Pool: app}.AppliedVersion(ctx)
 		require.NoError(t, err)
-		assert.Equal(t, int64(5), v)
+		assert.Equal(t, int64(6), v)
 	})
 
 	t.Run("teams and environments", func(t *testing.T) {
@@ -296,6 +296,57 @@ func TestWriteIntegration(t *testing.T) {
 		assert.Equal(t, "/problems/conflict", p.Type)
 	})
 
+	// Edges into and out of payments-api that the wider vocabulary allows (hub issue #17).
+	var vocabularyUIDs []string
+	t.Run("wider vocabulary", func(t *testing.T) {
+		createNode(t, editor, "prod", "browser", "client", "platform")
+		createNode(t, editor, "prod", "nightly-reconcile", "job", "platform")
+		createNode(t, editor, "prod", "ghcr", "container-registry", "platform")
+
+		var e model.Edge
+		for _, body := range []string{
+			`{"environment":"prod","type":"calls","from":"browser","to":"payments-api","attributes":{"protocol":"https","port":443}}`,
+			`{"environment":"prod","type":"depends_on","from":"browser","to":"payments-api"}`,
+			`{"environment":"prod","type":"calls","from":"nightly-reconcile","to":"payments-api","attributes":{"protocol":"otlp","path":"/api/v1"}}`,
+			`{"environment":"prod","type":"stores_data_in","from":"payments-api","to":"ghcr","attributes":{"port":5432,"role":"arch_app"}}`,
+		} {
+			e = model.Edge{}
+			editor.expect(t, http.StatusCreated, http.MethodPost, "/api/v1/edges", "", body, &e)
+			vocabularyUIDs = append(vocabularyUIDs, e.UID)
+		}
+		assert.Equal(t, map[string]any{"port": float64(5432), "role": "arch_app"}, e.Attributes)
+
+		tests := []struct {
+			name, body, want string
+		}{
+			{"protocol not in the enum",
+				`{"environment":"prod","type":"calls","from":"browser","to":"ledger","attributes":{"protocol":"smtp"}}`,
+				"body.attributes.protocol"},
+			{"stores_data_in port out of range",
+				`{"environment":"prod","type":"stores_data_in","from":"payments-api","to":"eks-prod","attributes":{"port":70000}}`,
+				"body.attributes.port"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				var p problemBody
+				editor.expect(t, http.StatusUnprocessableEntity, http.MethodPost, "/api/v1/edges", "", tt.body, &p)
+				assert.Equal(t, "/problems/validation", p.Type)
+				assert.Equal(t, []string{tt.want}, p.locations())
+			})
+		}
+
+		var g model.Graph
+		viewer.expect(t, http.StatusOK, http.MethodGet, "/api/v1/graph?environment=prod", "", "", &g)
+		var found bool
+		for _, ge := range g.Edges {
+			if ge.Type == "calls" && ge.From == "browser" && ge.To == "payments-api" {
+				found = true
+				assert.Equal(t, vocabularyUIDs[0], ge.UID)
+			}
+		}
+		assert.True(t, found, "the graph lists the client's calls edge")
+	})
+
 	t.Run("optimistic locking", func(t *testing.T) {
 		node := "/api/v1/nodes/prod/payments-api"
 		edge := "/api/v1/edges/" + callsUID
@@ -363,8 +414,12 @@ func TestWriteIntegration(t *testing.T) {
 			"node update arch-ci-platform",
 			"edge update editor",
 			"node update editor",
-			"edge create admin", // runs_on
-			"edge create admin", // depends_on, into payments-api
+			"edge create editor", // stores_data_in, into ghcr
+			"edge create editor", // calls, from nightly-reconcile
+			"edge create editor", // depends_on, from browser
+			"edge create editor", // calls, from browser
+			"edge create admin",  // runs_on
+			"edge create admin",  // depends_on, into payments-api
 			"edge create editor",
 			"node create editor",
 		}, got)
@@ -410,7 +465,7 @@ func TestWriteIntegration(t *testing.T) {
 		before := changeCount(t, owner)
 		var owned int
 		require.NoError(t, owner.QueryRow(ctx, "SELECT count(*) FROM nodes WHERE owner = 'platform'").Scan(&owned))
-		require.Equal(t, 4, owned)
+		require.Equal(t, 7, owned)
 		var p problemBody
 		admin.expect(t, http.StatusConflict, http.MethodDelete, "/api/v1/teams/platform", "", "", &p)
 		assert.Equal(t, "/problems/in-use", p.Type)
@@ -419,7 +474,7 @@ func TestWriteIntegration(t *testing.T) {
 		admin.expect(t, http.StatusConflict, http.MethodDelete, "/api/v1/environments/prod", "", "", &p)
 		assert.Equal(t, "/problems/in-use", p.Type)
 		require.NotNil(t, p.Count)
-		assert.Equal(t, 5, *p.Count)
+		assert.Equal(t, 8, *p.Count)
 		assert.Equal(t, before, changeCount(t, owner))
 	})
 
@@ -481,19 +536,23 @@ func TestWriteIntegration(t *testing.T) {
 
 		var edges int
 		require.NoError(t, owner.QueryRow(ctx, "SELECT count(*) FROM edges WHERE uid = ANY($1::uuid[])",
-			[]string{callsUID, dependsUID}).Scan(&edges))
+			append([]string{callsUID, dependsUID}, vocabularyUIDs...)).Scan(&edges))
 		assert.Zero(t, edges)
 		viewer.expect(t, http.StatusNotFound, http.MethodGet, "/api/v1/nodes/prod/payments-api", "", "", nil)
 
 		rows := changesSince(t, owner, before)
-		require.Len(t, rows, 3)
+		require.Len(t, rows, 3+len(vocabularyUIDs))
 		keys := map[string]string{}
 		for _, r := range rows {
 			assert.Equal(t, "delete", r.Action)
 			assert.Equal(t, rows[0].At, r.At, "one transaction")
 			keys[r.EntityKey] = r.Entity
 		}
-		assert.Equal(t, map[string]string{callsUID: "edge", dependsUID: "edge", "prod/payments-api": "node"}, keys)
+		want := map[string]string{callsUID: "edge", dependsUID: "edge", "prod/payments-api": "node"}
+		for _, uid := range vocabularyUIDs {
+			want[uid] = "edge"
+		}
+		assert.Equal(t, want, keys)
 
 		var page model.HistoryPage
 		viewer.expect(t, http.StatusOK, http.MethodGet, "/api/v1/history?entity=node&environment=prod&id=payments-api", "", "", &page)
