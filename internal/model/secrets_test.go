@@ -71,3 +71,31 @@ func TestCheckSecrets(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckSchemaSecrets(t *testing.T) {
+	tests := []struct {
+		name  string
+		props string
+		want  []string
+	}{
+		{"none", `{"max_tokens":{"type":"number"},"region":{"type":"string"}}`, nil},
+		{"api_key", `{"api_key":{"type":"string"}}`, []string{"body.attributes_schema.properties.api_key"}},
+		{"db_password", `{"db_password":{"type":"string"}}`, []string{"body.attributes_schema.properties.db_password"}},
+		{"accessToken", `{"accessToken":{"type":"string"}}`, []string{"body.attributes_schema.properties.accessToken"}},
+		{"every secret name, ordered", `{"region":{"type":"string"},"db_password":{"type":"string"},"api_key":{"type":"string","enum":["Zq7xWv9Lm2Kp"]}}`,
+			[]string{"body.attributes_schema.properties.api_key", "body.attributes_schema.properties.db_password"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := checkSchemaSecrets(map[string]any{"type": "object", "properties": decode(t, tt.props)})
+			if tt.want == nil {
+				require.NoError(t, err)
+				return
+			}
+			var se *SecretError
+			require.ErrorAs(t, err, &se)
+			assert.Equal(t, tt.want, se.Locations)
+			assert.NotContains(t, err.Error(), "Zq7xWv9Lm2Kp", "only locations, never a value")
+		})
+	}
+}

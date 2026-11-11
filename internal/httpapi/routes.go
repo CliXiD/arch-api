@@ -92,6 +92,7 @@ func registerRoutes(api huma.API, d Deps) {
 
 	registerModelRoutes(api, d)
 	registerWriteRoutes(api, d)
+	registerTypeRoutes(api, d)
 }
 
 func meFrom(p auth.Principal) Me {

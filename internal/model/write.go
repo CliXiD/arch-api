@@ -21,6 +21,7 @@ const (
 
 	entityNode        = "node"
 	entityEdge        = "edge"
+	entityType        = "type"
 	entityTeam        = "team"
 	entityEnvironment = "environment"
 

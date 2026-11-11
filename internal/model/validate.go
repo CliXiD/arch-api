@@ -159,3 +159,152 @@ func sortedKeys(m map[string]any) []string {
 	slices.Sort(keys)
 	return keys
 }
+
+// Fixed attributes_schema messages. None of them holds a received value.
+const (
+	msgSchemaType          = `type must be "object"`
+	msgSchemaKeyword       = "has an unsupported keyword"
+	msgSchemaProperties    = "properties must be an object"
+	msgSchemaAdditional    = "additionalProperties must be a boolean"
+	msgSchemaEmptyName     = "property names must not be empty"
+	msgSchemaRequiredType  = "must be an array of property names"
+	msgSchemaRequiredName  = "names a property that is not declared"
+	msgSchemaRequiredTwice = "names a property twice"
+	msgPropertyObject      = "must be an object"
+	msgPropertyType        = "type must be string, number, boolean or array"
+	msgPropertyEnum        = "enum must be a non-empty array of values of the property's type"
+	msgPropertyLimit       = "minimum and maximum must be numbers"
+	msgPropertyRange       = "minimum must not be above maximum"
+	msgPropertyItems       = `items must be {"type": "string"}`
+)
+
+const schemaLocation = "body.attributes_schema"
+
+// schemaKeywords are the keywords a schema may hold; propertyKeywords those a property of each
+// type may hold.
+var (
+	schemaKeywords   = []string{"type", "properties", "required", "additionalProperties"}
+	propertyKeywords = map[string][]string{
+		"string":  {"type", "enum"},
+		"number":  {"type", "enum", "minimum", "maximum"},
+		"boolean": {"type"},
+		"array":   {"type", "items"},
+	}
+)
+
+// validateSchema checks that a type's attributes_schema uses only the documented JSON Schema
+// subset ([SPEC-model-03]): `type: "object"`, `properties`, `required` and
+// `additionalProperties`; per property a `type` of string, number, boolean or array, `enum`
+// (string or number), `minimum` and `maximum` (number) and `items: {"type": "string"}` (array,
+// required). It returns at most one failure per location, ordered by location.
+func validateSchema(schema map[string]any) ValidationErrors {
+	var errs ValidationErrors
+	add := func(loc, msg string) { errs = append(errs, &ValidationError{Location: loc, Message: msg}) }
+
+	props, propsOK := schema["properties"].(map[string]any)
+	switch {
+	case schema["type"] != "object":
+		add(schemaLocation, msgSchemaType)
+	case !onlyKeys(schema, schemaKeywords):
+		add(schemaLocation, msgSchemaKeyword)
+	case !propsOK:
+		add(schemaLocation, msgSchemaProperties)
+	default:
+		if v, ok := schema["additionalProperties"]; ok {
+			if _, isBool := v.(bool); !isBool {
+				add(schemaLocation, msgSchemaAdditional)
+			}
+		}
+	}
+
+	for _, name := range sortedKeys(props) {
+		if name == "" {
+			add(schemaLocation+".properties", msgSchemaEmptyName)
+			continue
+		}
+		if msg := checkPropertySchema(props[name]); msg != "" {
+			add(schemaLocation+".properties."+name, msg)
+		}
+	}
+
+	if required, ok := schema["required"]; ok {
+		if msg := checkRequired(required, props); msg != "" {
+			add(schemaLocation+".required", msg)
+		}
+	}
+	return sortErrors(errs)
+}
+
+// checkPropertySchema checks one property's schema; "" means valid.
+func checkPropertySchema(v any) string {
+	prop, ok := v.(map[string]any)
+	if !ok {
+		return msgPropertyObject
+	}
+	typ, _ := prop["type"].(string)
+	allowed, ok := propertyKeywords[typ]
+	if !ok {
+		return msgPropertyType
+	}
+	if !onlyKeys(prop, allowed) {
+		return msgSchemaKeyword
+	}
+	if enum, ok := prop["enum"]; ok {
+		values, ok := enum.([]any)
+		if !ok || len(values) == 0 || slices.ContainsFunc(values, func(e any) bool { return valueKind(e) != typ }) {
+			return msgPropertyEnum
+		}
+	}
+	minimum, hasMin := prop["minimum"]
+	maximum, hasMax := prop["maximum"]
+	lo, loOK := number(minimum)
+	hi, hiOK := number(maximum)
+	if hasMin && !loOK || hasMax && !hiOK {
+		return msgPropertyLimit
+	}
+	if hasMin && hasMax && lo > hi {
+		return msgPropertyRange
+	}
+	if typ == "array" {
+		items, ok := prop["items"].(map[string]any)
+		if !ok || len(items) != 1 || items["type"] != "string" {
+			return msgPropertyItems
+		}
+	}
+	return ""
+}
+
+// checkRequired checks `required`: an array of declared property names, each once; "" means valid.
+func checkRequired(v any, props map[string]any) string {
+	names, ok := v.([]any)
+	if !ok {
+		return msgSchemaRequiredType
+	}
+	seen := map[string]bool{}
+	for _, n := range names {
+		name, ok := n.(string)
+		switch {
+		case !ok:
+			return msgSchemaRequiredType
+		case seen[name]:
+			return msgSchemaRequiredTwice
+		}
+		seen[name] = true
+	}
+	for _, n := range names {
+		if _, declared := props[n.(string)]; !declared {
+			return msgSchemaRequiredName
+		}
+	}
+	return ""
+}
+
+// onlyKeys reports whether every key of m is one of allowed.
+func onlyKeys(m map[string]any, allowed []string) bool {
+	for k := range m {
+		if !slices.Contains(allowed, k) {
+			return false
+		}
+	}
+	return true
+}

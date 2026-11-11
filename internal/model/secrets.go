@@ -103,3 +103,19 @@ func nameWords(name string) []string {
 func isLetter(c byte) bool { return 'a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' }
 
 func isUpper(c byte) bool { return 'A' <= c && c <= 'Z' }
+
+// checkSchemaSecrets returns a *SecretError naming every property of a type's attributes_schema
+// whose name looks like a secret, by the attribute name rules; nil when none does.
+func checkSchemaSecrets(schema map[string]any) error {
+	props, _ := schema["properties"].(map[string]any)
+	var locations []string
+	for _, name := range sortedKeys(props) {
+		if secretName.MatchString(name) || secretNameToken(name) {
+			locations = append(locations, schemaLocation+".properties."+name)
+		}
+	}
+	if len(locations) == 0 {
+		return nil
+	}
+	return &SecretError{Locations: locations}
+}

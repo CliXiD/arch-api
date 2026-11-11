@@ -3,6 +3,410 @@ info:
   title: Architecture E2E API
   version: 0.1.0
 paths:
+  /api/v1/admin/types/edge-types:
+    post:
+      operationId: create-edge-type
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeTypeCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeType"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create an edge type
+      tags:
+      - model
+  /api/v1/admin/types/edge-types/{id}:
+    delete:
+      operationId: delete-edge-type
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: a built-in type (`/problems/conflict`), or still used by edges (`/problems/in-use`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete a custom edge type that no edge uses
+      tags:
+      - model
+    patch:
+      operationId: update-edge-type
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EdgeTypePatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EdgeType"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: a built-in type would lose an attribute (`/problems/conflict`), or existing edges would fail the change (`/problems/conflict`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: "Update an edge type: each field present replaces the stored value"
+      tags:
+      - model
+  /api/v1/admin/types/node-types:
+    post:
+      operationId: create-node-type
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeTypeCreate"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeType"
+          description: Created
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Create a node type
+      tags:
+      - model
+  /api/v1/admin/types/node-types/{id}:
+    delete:
+      operationId: delete-node-type
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: a built-in type (`/problems/conflict`), or still used by nodes (`/problems/in-use`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: Delete a custom node type that no node uses
+      tags:
+      - model
+    patch:
+      operationId: update-node-type
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeTypePatch"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeType"
+          description: OK
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/InUseProblem"
+          description: "Conflict: a built-in type would lose an attribute (`/problems/conflict`), or existing nodes would fail the change (`/problems/conflict`, with `count`)"
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Request Entity Too Large
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      security:
+      - bearer: []
+      summary: "Update a node type: each field present replaces the stored value"
+      tags:
+      - model
   /api/v1/edges:
     get:
       operationId: list-edges
@@ -1583,7 +1987,7 @@ components:
           - environment
           type: string
         entity_key:
-          description: Node <environment>/<id>, edge uid, team or environment id.
+          description: Node <environment>/<id>, edge uid, type node/<id> or edge/<id>, team or environment id.
           type: string
         id:
           format: int64
@@ -1731,6 +2135,50 @@ components:
       - attributes_schema
       - allowed
       - builtin
+      type: object
+    EdgeTypeCreate:
+      additionalProperties: false
+      properties:
+        allowed:
+          description: Allowed (from kind, to kind) pairs.
+          items:
+            $ref: "#/components/schemas/KindPair"
+          minItems: 1
+          type: array
+          uniqueItems: true
+        attributes_schema:
+          additionalProperties: {}
+          description: JSON Schema of the edge attributes, in the documented subset.
+          type: object
+        id:
+          pattern: ^[a-z][a-z0-9_]{1,62}$
+          type: string
+        name:
+          minLength: 1
+          type: string
+      required:
+      - id
+      - name
+      - attributes_schema
+      - allowed
+      type: object
+    EdgeTypePatch:
+      additionalProperties: false
+      properties:
+        allowed:
+          description: Replaces the pairs; every existing edge of the type must still use one of them.
+          items:
+            $ref: "#/components/schemas/KindPair"
+          minItems: 1
+          type: array
+          uniqueItems: true
+        attributes_schema:
+          additionalProperties: {}
+          description: Replaces the schema; every existing edge of the type must still pass it.
+          type: object
+        name:
+          minLength: 1
+          type: string
       type: object
     Environment:
       additionalProperties: false
@@ -1929,7 +2377,7 @@ components:
       additionalProperties: false
       properties:
         count:
-          description: Number of nodes owned by the team, or held by the environment.
+          description: Number of nodes or edges that still use the entity, or that the change would make fail.
           format: int64
           type: integer
         detail:
@@ -2195,6 +2643,45 @@ components:
       - name
       - attributes_schema
       - builtin
+      type: object
+    NodeTypeCreate:
+      additionalProperties: false
+      properties:
+        attributes_schema:
+          additionalProperties: {}
+          description: JSON Schema of the node attributes, in the documented subset.
+          type: object
+        id:
+          pattern: ^[a-z0-9][a-z0-9-]{1,62}$
+          type: string
+        kind:
+          description: Fixed once created.
+          enum:
+          - application
+          - infrastructure
+          - network
+          - external
+          - team
+          type: string
+        name:
+          minLength: 1
+          type: string
+      required:
+      - id
+      - kind
+      - name
+      - attributes_schema
+      type: object
+    NodeTypePatch:
+      additionalProperties: false
+      properties:
+        attributes_schema:
+          additionalProperties: {}
+          description: Replaces the schema; every existing node of the type must still pass it.
+          type: object
+        name:
+          minLength: 1
+          type: string
       type: object
     ReadinessReport:
       additionalProperties: false
