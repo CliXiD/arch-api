@@ -38,7 +38,15 @@ go run ./cmd/arch-api migrate up      # apply migrations as the owner (MIGRATE_D
 go run ./cmd/arch-api migrate status  # applied and pending versions
 go run ./cmd/arch-api seed --sample   # optional: sample graph (7 nodes, 7 edges) in prod (DATABASE_URL)
 go run ./cmd/arch-api serve           # API on HTTP_ADDR, metrics on METRICS_ADDR (DATABASE_URL)
+go run ./cmd/arch-api teams add platform --name "Platform"  # create a team if missing (MIGRATE_DATABASE_URL)
 ```
+
+`teams add` creates the first teams of a fresh database without an admin login. It is idempotent:
+an existing team prints `team <id> already exists` and exits `0` (its name is left as it is). An
+invalid id or an empty name exits `1` and writes nothing. The team and its `change_log` row (actor
+`system` / `arch-api teams add`, kind `service`, source `api`) are written in one transaction.
+Team ids must match the Keycloak group names (`SPEC-identity-access-05`). The team API stays
+admin-only.
 
 `seed --sample` is for local development. It writes the teams `platform` and `core` and the sample
 graph in one transaction, and refuses (exit `1`, nothing written) once the database has any node.
@@ -47,8 +55,8 @@ graph in one transaction, and refuses (exit `1`, nothing written) once the datab
 
 Two PostgreSQL roles (`adr/0014`):
 
-- **Owner** (`arch` locally): owns the schema and runs `migrate` through `MIGRATE_DATABASE_URL`
-  (falls back to `DATABASE_URL` when unset).
+- **Owner** (`arch` locally): owns the schema and runs `migrate` and `teams add` through
+  `MIGRATE_DATABASE_URL` (falls back to `DATABASE_URL` when unset).
 - **Runtime** `arch_app`: `serve` and `seed` connect as it through `DATABASE_URL`. Migration
   `00005_app_role_grants.sql` grants it `SELECT, INSERT, UPDATE, DELETE` on the model tables, only
   `SELECT, INSERT` on `change_log` (so the server can never rewrite history), the `change_log` id
@@ -70,8 +78,8 @@ Read once from the environment at start-up. A missing or invalid variable stops 
 
 | var | required | default | used by |
 |---|---|---|---|
-| `DATABASE_URL` | yes | — | `serve`, `seed` (as the runtime role `arch_app`); `migrate` when `MIGRATE_DATABASE_URL` is unset |
-| `MIGRATE_DATABASE_URL` | no | `DATABASE_URL` | `migrate` (as the schema owner) |
+| `DATABASE_URL` | yes | — | `serve`, `seed` (as the runtime role `arch_app`); `migrate` and `teams add` when `MIGRATE_DATABASE_URL` is unset |
+| `MIGRATE_DATABASE_URL` | no | `DATABASE_URL` | `migrate`, `teams add` (as the schema owner) |
 | `HTTP_ADDR` | no | `:8080` | `serve` |
 | `METRICS_ADDR` | no | `:9090` | `serve` |
 | `OIDC_ISSUER` | yes for `serve` | — | token `iss` check, discovery |
@@ -251,7 +259,7 @@ and `TESTCONTAINERS_RYUK_DISABLED=true`.
 ## Layout
 
 ```
-cmd/arch-api         subcommand dispatch: serve, migrate up|status, seed --sample
+cmd/arch-api         subcommand dispatch: serve, migrate up|status, seed --sample, teams add
 cmd/openapi          prints the OpenAPI YAML (make openapi)
 internal/config      environment parsing and validation
 internal/auth        JWKS cache, token validation, roles, Principal
